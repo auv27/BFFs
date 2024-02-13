@@ -1,0 +1,199 @@
+---
+title: "Selecting Epochs for fMRI Task"
+author: "Alicia Vallorani"
+date: "February 12, 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse)
+```
+
+
+```{r data prep, include = FALSE}
+
+read.csv("~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/stimuli_creation/tpv_24/coding/dyad_24_behavior.csv", stringsAsFactors = FALSE) %>%
+  rename(epoch = negativeAffect1.ordinal,
+         onset = negativeAffect1.onset,
+         offset = negativeAffect1.offset,
+         neg1 = negativeAffect1.neg1,
+         pos1 = positiveAffect1.pos1,
+         neg2 = negativeAffect2.neg2,
+         pos2 = positiveAffect2.pos2) %>%
+  mutate(id1 = "2337_24_47", id2 = "2337_24_48") %>%
+  dplyr::select(id1, id2, epoch, onset, offset, neg1, pos1, neg2, pos2) %>% 
+  filter(neg1 != 9) %>%
+  rowwise() %>% 
+  mutate(meanNeg = mean(c(neg1, neg2)),
+         meanPos = mean(c(pos1, pos2)),
+         selectedAffect = ifelse(meanNeg > .5 & meanPos <= .5, -1,
+                                 ifelse(meanPos > .5 & meanNeg <= .5, 1,
+                                        ifelse(meanPos <= .5 & meanNeg == 0, 0,
+                                               ifelse(meanPos == 0 & meanNeg <= .5, 0, NA)))),
+         relativeAffect = meanPos - meanNeg) %>%
+  as.data.frame() -> df
+```
+
+
+## Selecting 10% most neg; 10% most pos; 10% most neu
+```{r epoch selection}
+# Select most neg, pos, neu epochs
+df %>%
+  select(id1, id2, onset, offset, selectedAffect, relativeAffect) %>%
+  mutate(selectedSegments = ifelse(selectedAffect == relativeAffect, 1,
+                                   ifelse(selectedAffect == 0 & relativeAffect == -.5, 1,
+                                          ifelse(selectedAffect == 0 & 
+                                                 relativeAffect == .5, 1, NA)))) %>%
+  na.omit() -> neg_pos_neu
+
+# Randomly select neg epochs
+neg_pos_neu %>%
+  filter(selectedAffect == -1) %>%
+  sample_n(., 1) %>%
+  mutate(emotion = "neg",
+         clip = row_number()) -> neg0
+
+neg_pos_neu %>%
+  filter(selectedAffect == 0 & relativeAffect == -.5) %>%
+  sample_n(., 5) -> neg_add
+
+#df %>%
+  #filter(epoch == 37 | epoch == 44 | epoch == 50) %>%
+  #dplyr::select(id1, id2, onset, offset, selectedAffect, relativeAffect) -> neg_add
+
+neg0 %>%
+  full_join(., neg_add) %>%
+  mutate(emotion = "neg",
+         clip = row_number()) -> neg
+  
+# Select pos epochs
+neg_pos_neu %>%
+  filter(selectedAffect == 1) %>%
+  sample_n(., 6) %>%
+  mutate(emotion = "pos",
+         clip = row_number()) -> pos
+
+#df %>%
+  #filter(epoch == 4 | epoch == 17) %>%
+  #dplyr::select(id1, id2, onset, offset, selectedAffect, relativeAffect) %>%
+  #mutate(selectedSegments = 1) -> pos_add
+
+#pos0 %>%
+    #full_join(., pos_add) %>%
+  #mutate(emotion = "pos",
+         #clip = row_number()) -> pos
+
+# Select neu epochs
+#neg_pos_neu %>%
+  #filter(relativeAffect == 0) %>%
+  #sample_n(., 1) %>%
+  #mutate(emotion = "neu",
+         #clip = row_number())-> neu0
+
+## Choosing to err positive when needed due to low neg affect generally 
+neg_pos_neu %>%
+  filter(selectedAffect == 0 & relativeAffect == 0) %>% 
+  sample_n(., 1) %>%
+  mutate(emotion = "neu",
+         clip = row_number()) -> neu0
+
+neg_pos_neu %>%
+  filter(selectedAffect == 0 & relativeAffect == 0.5) %>% 
+  sample_n(., 2) %>%
+  mutate(emotion = "neu",
+         clip = row_number()) -> neu_add1
+
+df %>%
+  filter(epoch == 4 | epoch == 11 | epoch == 12) %>%
+  dplyr::select(id1, id2, onset, offset, selectedAffect, relativeAffect) -> neu_add2
+
+neu0 %>%
+  full_join(., neu_add1) %>%
+  full_join(.,neu_add2) %>%
+  mutate(emotion = "neu",
+         clip = row_number()) -> neu
+
+Reduce(function(...) {full_join(...)}, list(neg, pos, neu)) %>%
+  arrange(onset) %>%
+  mutate(fileType = ".mp4",
+         filePath = "subject_files/dyad_24/clips/") -> all_clips
+
+write.csv(all_clips, "~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/stimuli_creation/tpv_24/coding/dyad_24_selectedAffect.csv")
+```
+
+
+## Creating stimuli files
+```{r file creation}
+# File for video extraction
+all_clips %>%
+  select(onset, offset, emotion, clip) %>%
+  arrange(emotion, onset) %>%
+  group_by(emotion) %>%
+  mutate(onsetMin = format( as.POSIXct(Sys.Date())+ onset/1000, "%M:%S"),
+         offset = round(offset/1000)*1000,
+         offsetMin = format( as.POSIXct(Sys.Date())+ offset/1000, "%M:%S")) -> epochs
+
+write.csv(epochs, "~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/stimuli_creation/tpv_24/coding/dyad_24_epochs.csv")
+
+# File for id1
+all_clips %>%
+  mutate(emotion2 = emotion) %>%
+  unite(fileType, emotion2, clip, fileType, sep = "") %>%
+  unite(filePath, filePath, id1, sep = "") %>% 
+  unite(clips, filePath, fileType) %>%
+  select(clips, emotion) -> id1
+
+# File for id2
+all_clips %>%
+  mutate(emotion2 = emotion) %>%
+  unite(fileType, emotion2, clip, fileType, sep = "") %>%
+  unite(filePath, filePath, id2, sep = "") %>% 
+  unite(clips, filePath, fileType) %>%
+  select(clips, emotion) -> id2
+```
+
+
+## Randomizing stimuli files (no repeats by emotion)
+```{r randomize}
+# Randomization id1
+random.sample <- function(x) {
+  repeat {
+    # do something
+    i <- id1[sample(nrow(id1)),]
+    x <- i %>% 
+      group_by(group = cumsum(i$emotion != lag(i$emotion, default = first(i$emotion))))
+    # exit if the condition is met
+    if (anyDuplicated(x$group) == 0) break
+  }
+  return(x)
+}
+
+random.sample(id1) %>%
+  ungroup() %>%
+  select(clips, emotion) -> id1_random
+write.csv(id1_random, "~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/stimuli_creation/tpv_24/47_epochs.csv", row.names = FALSE)
+  
+
+# Randomization id2
+random.sample <- function(x) {
+  repeat {
+    # do something
+    i <- id2[sample(nrow(id2)),]
+    x <- i %>% 
+      group_by(group = cumsum(i$emotion != lag(i$emotion, default = first(i$emotion))))
+    # exit if the condition is met
+    if (anyDuplicated(x$group) == 0) break
+  }
+  return(x)
+}
+
+random.sample(id2) %>%
+  ungroup() %>%
+  select(clips, emotion) -> id2_random
+write.csv(id2_random, "~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/stimuli_creation/tpv_24/48_epochs.csv", row.names = FALSE)
+```
