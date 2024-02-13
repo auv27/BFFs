@@ -1,0 +1,256 @@
+---
+title: "bffs_behcoding_cleaning_06152023"
+author: "Alicia Vallorani"
+date: "2023-08-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+list.of.packages <- c("tidyverse", "fs")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+# Loading packages
+lapply(list.of.packages, require, character.only = TRUE)
+```
+
+
+```{r}
+# homepath - edit to match user
+homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/behavioral_coding"
+
+# Path to raw data
+filepath <- file.path(homepath,"/framexframe_exports/", fsep = "")
+
+# Read in the data
+input_files <- dir_ls(filepath, regexp = "\\.csv$")
+input_data <- input_files |>
+  map_dfr(read_csv, col_types = list(expressedAffectRight.code01 = col_double())) |>
+  filter(!is.na(timing.code01)) |>
+  select(idLeft.code01, idRight.code01, nFrame, timing.code01, 
+         talkingWithHands.code01, expressedAffectLeft.code01, 
+         expressedAffectRight.code01, socialDiscomfortLeft.code01,
+         socialDiscomfortRight.code01, explicitMentalizing.code01) |>
+  separate(idLeft.code01, c("study1", "dyad", "idLeft")) |>
+  separate(idRight.code01, c("study2", "dyad2", "idRight")) |>
+  rename_with(~str_remove(., ".code01"), ends_with(".code01")) |>
+  select(-study1, -study2, -dyad2) |>
+  group_by(dyad, timing) |>
+  mutate(time = rep(seq(length(dyad)/29), 
+                     length.out = length(dyad), each = 30))
+
+# Export frame-by-frame data
+outpath <- file.path(homepath,"/framexframe_exports/output/", fsep = "")
+write.csv(input_data, paste0(outpath, "framexframe_data_", 
+                                format(Sys.time(), "%m%d%Y"), ".csv"), 
+          row.names = FALSE)
+```
+
+
+# Talking with hands
+```{r}
+talking <- input_data |>
+  select(nFrame, dyad, timing, time, talkingWithHands) |>
+  group_by(dyad, timing, time, talkingWithHands) |>
+  summarise(talkingWithHandsN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(talkingWithHandsN == max(talkingWithHandsN)) |>
+  select(-talkingWithHandsN)
+
+# Check for duplicates
+talking |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+talking2 <- talking |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(talkingWithHands))
+
+# Second check for duplicates
+talking2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Expressed affect left
+```{r}
+affect_left <- input_data |>
+  select(nFrame, dyad, timing, time, expressedAffectLeft) |>
+  group_by(dyad, timing, time, expressedAffectLeft) |>
+  summarise(expressedAffectLeftN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(expressedAffectLeftN == max(expressedAffectLeftN)) |>
+  select(-expressedAffectLeftN)
+
+# Check for duplicates
+affect_left |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+affect_left2 <- affect_left |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(expressedAffectLeft)) |>
+  # There is one instance of equivalent -1 and 1, keeping -1
+  mutate(remove = ifelse(dyad == "08" & timing == "excited2" & time == 99 & 
+                         expressedAffectLeft == 1, 1, 0)) |>
+  filter(remove != 1) |>
+  select(-remove)
+
+# Second check for duplicates
+affect_left2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Expressed affect right
+```{r}
+affect_right <- input_data |>
+  select(dyad, timing, time, expressedAffectRight) |>
+  group_by(dyad, timing, time, expressedAffectRight) |>
+  summarise(expressedAffectRightN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(expressedAffectRightN == max(expressedAffectRightN)) |>
+  select(-expressedAffectRightN)
+
+# Check for duplicates
+affect_right |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+affect_right2 <- affect_right |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(expressedAffectRight)) |>
+  # There are two instances of equivalent -1 and 1, keeping -1
+  mutate(remove = ifelse(dyad == "19" & timing == "worried1" & time == 148 & 
+                         expressedAffectRight == 1 |
+                         dyad == "27" & timing == "worried2" & time == 27 &
+                         expressedAffectRight == 1, 1, 0)) |>
+  filter(remove != 1) |>
+  select(-remove)
+
+# Second check for duplicates
+affect_right2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Social discomfort left
+```{r}
+discomfort_left <- input_data |>
+  select(nFrame, dyad, timing, time, socialDiscomfortLeft) |>
+  group_by(dyad, timing, time, socialDiscomfortLeft) |>
+  summarise(socialDiscomfortLeftN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(socialDiscomfortLeftN == max(socialDiscomfortLeftN)) |>
+  select(-socialDiscomfortLeftN)
+
+# Check for duplicates
+discomfort_left |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+discomfort_left2 <- discomfort_left |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(socialDiscomfortLeft))
+
+# Second check for duplicates
+discomfort_left2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Social discomfort right
+```{r}
+discomfort_right <- input_data |>
+  select(nFrame, dyad, timing, time, socialDiscomfortRight) |>
+  group_by(dyad, timing, time, socialDiscomfortRight) |>
+  summarise(socialDiscomfortRightN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(socialDiscomfortRightN == max(socialDiscomfortRightN)) |>
+  select(-socialDiscomfortRightN)
+
+# Check for duplicates
+discomfort_right |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+discomfort_right2 <- discomfort_right |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(socialDiscomfortRight))
+
+# Second check for duplicates
+discomfort_right2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Explicit mentalizing
+```{r}
+mentalizing <- input_data |>
+  select(nFrame, dyad, timing, time, explicitMentalizing) |>
+  group_by(dyad, timing, time, explicitMentalizing) |>
+  summarise(explicitMentalizingN = n()) |>
+  ungroup() |>
+  group_by(dyad, timing, time) |>
+  filter(explicitMentalizingN == max(explicitMentalizingN)) |>
+  select(-explicitMentalizingN)
+
+# Check for duplicates
+mentalizing |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+
+# Remove duplicates
+mentalizing2 <- mentalizing |>
+  group_by(dyad, timing, time) |>
+  top_n(1, abs(explicitMentalizing))
+
+# Second check for duplicates
+mentalizing2 |>
+  group_by(dyad, timing, time) |>
+  filter(duplicated(time))
+```
+
+
+# Merge data sets
+```{r}
+df1 <- Reduce(function(...) {full_join(...)}, list(affect_left2, 
+                                                   affect_right2, 
+                                                   mentalizing2))
+
+df2 <- Reduce(function(...) {full_join(...)}, list(discomfort_left2, 
+                                                   discomfort_right2, 
+                                                   talking2))
+
+df3 <- input_data |> 
+  ungroup() |>
+  dplyr::select(dyad, idLeft, idRight) |>
+  unique() |>
+  mutate(idLeft = paste("2337", dyad, idLeft, sep = "_"),
+         idRight = paste("2337", dyad, idRight, sep = "_"))
+
+df4 <- Reduce(function(...) {full_join(...)}, list(df3, df1, df2))
+  
+
+# Export second-by-second data
+write.csv(df4, paste0(outpath, "secondxsecond_data_", 
+                                format(Sys.time(), "%m%d%Y"), ".csv"), 
+          row.names = FALSE)
+```
+

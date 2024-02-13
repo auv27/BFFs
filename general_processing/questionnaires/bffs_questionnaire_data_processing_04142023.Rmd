@@ -1,0 +1,428 @@
+---
+title: "BFFs Questionnaire Data Processing"
+author: "Alicia Vallorani"
+date: "2023-04-14"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, psych, Hmisc)
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/visualization_tools/basic_theme.R")
+theme_set(basic_theme)
+```
+
+
+# Visit 1 Questionnaires
+## Data prep
+```{r}
+df_visit1 <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/questionnaires/final_raw_qst_data/bffs_visit1_qsts_04142023.csv") |>
+  # Remove dayd 26 (dyad 26 did not follow instructions during the dyad)
+  filter(id != "2337_26_51") |>
+  filter(id != "2337_26_52") |>
+  mutate_all(function(x) {
+    if (is.character(x)) {
+      case_when(
+        x == "Do not wish to respond" ~ NA_character_,
+        TRUE ~ x
+      )
+    } else {
+      x
+    }
+  })
+```
+
+
+## Demographics
+### Data prep
+```{r}
+demographics <- df_visit1 |>
+  rename(visitDate1 = Timestamp, handedness = D2, sexAssigned = D3, 
+         genderIdentity = D4, genderIdentityOther = D4.2, 
+         sexualIdentity = D5, sexualIdentityOther = D5.2,
+         race = D6, raceOther = D6.2, 
+         ethnicity = D7, ethnicityOther = D7.2,
+         romAttract = F1, sexAttract = F2) |>
+  mutate(ageVisit1 = as.numeric(difftime(as.Date(visitDate1), as.Date(D1), 
+                                         units ="days"))/365.25) |>
+  dplyr::select(visitDate1, id, ageVisit1, handedness, race, raceOther, ethnicity, 
+                ethnicityOther, sexAssigned, genderIdentity, genderIdentityOther, 
+                sexualIdentity, sexualIdentityOther, romAttract, sexAttract)
+```
+
+
+### Sample demographics
+```{r}
+# age and romantic and sexual attraction
+psych::describe(demographics |> dplyr::select(ageVisit1, romAttract, sexAttract))
+
+# handedness
+demographics |>
+  group_by(handedness) |>
+  summarise(n())
+
+# sex assigned
+demographics |>
+  group_by(sexAssigned) |>
+  summarise(n())
+
+# gender
+demographics |>
+  group_by(genderIdentity) |>
+  summarise(n())
+
+# sexual identity
+demographics %>%
+  group_by(sexualIdentity) |>
+  summarise(n())
+
+# race
+demographics |>
+  group_by(race) |>
+  summarise(n())
+
+# ethnicity
+demographics %>%
+  group_by(ethnicity) |>
+  summarise(n())
+```
+
+
+## Social interaction
+### Data prep
+```{r}
+interaction <- df_visit1 |>
+  dplyr::select(id, SI1, SI2, SI3, SI4, SI5, 
+                SI6, SI7, SI8, SI9, SI10, SI11) |>
+  rename_with(~paste0(.x, "Visit1"), starts_with("SI")) |>
+  mutate(SI2Visit1r =
+         recode(SI2Visit1, `1` = 8, `2` = 7, `3` = 5, `4` = 4, `5` = 3, `7` = 2, 
+                `8` = 1)) |>
+  rowwise() |>
+  mutate(siQualityVisit1 = mean(c(SI1Visit1, SI2Visit1r, SI3Visit1, SI4Visit1, 
+                            SI5Visit1, SI10Visit1, SI11Visit1)),
+         siDisclosureVisit1 = mean(c(SI6Visit1, SI7Visit1)),
+         siEngagementVisit1 = mean(c(SI8Visit1, SI9Visit1)),
+         siOverallVisit1 = mean(c(SI1Visit1, SI2Visit1r, SI3Visit1, SI4Visit1, 
+                            SI5Visit1, SI10Visit1, SI11Visit1, SI6Visit1, SI7Visit1,
+                            SI8Visit1, SI9Visit1))) |>
+     as.data.frame() 
+```
+
+
+### Descriptives
+```{r}
+psych::describe(interaction |> dplyr::select(siQualityVisit1, siDisclosureVisit1, 
+                                             siEngagementVisit1))
+ 
+rcorr(as.matrix(interaction |> dplyr::select(siQualityVisit1, siDisclosureVisit1, 
+                                             siEngagementVisit1), type = "pearson")) 
+```
+
+
+### Internal reliability
+```{r}
+# Quality
+interaction_quality_alpha <- interaction |>
+  dplyr::select(SI1Visit1, SI2Visit1r, SI3Visit1, SI4Visit1, SI5Visit1, 
+                SI10Visit1, SI11Visit1)
+
+alpha(interaction_quality_alpha)
+
+# Disclosure
+interaction_disclosure_alpha <- interaction |>
+  dplyr::select(SI6Visit1, SI7Visit1)
+
+alpha(interaction_disclosure_alpha)
+
+# Engagement
+interaction_engagement_alpha <- interaction |>
+  dplyr::select(SI8Visit1, SI9Visit1)
+
+alpha(interaction_engagement_alpha)
+
+# Overall
+interaction_overall_alpha <- interaction |>
+  dplyr::select(SI1Visit1, SI2Visit1r, SI3Visit1, SI4Visit1, SI5Visit1, 
+                SI10Visit1, SI11Visit1, SI6Visit1, SI7Visit1, SI8Visit1, SI9Visit1)
+
+alpha(interaction_overall_alpha)
+```
+
+
+## Social anxiety
+### Data prep
+```{r}
+social_anxiety <- df_visit1 |>
+  dplyr::select(id, LSAS1FearAnxiety, LSAS1Avoidance, LSAS2FearAnxiety, LSAS2Avoidance,	
+                LSAS3FearAnxiety, LSAS3Avoidance, LSAS4FearAnxiety, LSAS4Avoidance,	
+                LSAS5FearAnxiety, LSAS5Avoidance, LSAS6FearAnxiety, LSAS6Avoidance,
+                LSAS7FearAnxiety, LSAS7Avoidance, LSAS8FearAnxiety, LSAS8Avoidance,
+                LSAS9FearAnxiety, LSAS9Avoidance, LSAS10FearAnxiety, LSAS10Avoidance,
+                LSAS11FearAnxiety, LSAS11Avoidance, LSAS12FearAnxiety, LSAS12Avoidance,
+                LSAS13FearAnxiety, LSAS13Avoidance, LSAS14FearAnxiety, LSAS14Avoidance,
+                LSAS15FearAnxiety, LSAS15Avoidance, LSAS16FearAnxiety, LSAS16Avoidance, 
+                LSAS17FearAnxiety, LSAS17Avoidance, LSAS18FearAnxiety, LSAS18Avoidance,
+                LSAS19FearAnxiety, LSAS19Avoidance, LSAS20FearAnxiety, LSAS20Avoidance,
+                LSAS21FearAnxiety, LSAS21Avoidance, LSAS22FearAnxiety, LSAS22Avoidance,
+                LSAS23FearAnxiety, LSAS23Avoidance, LSAS24FearAnxiety, LSAS24Avoidance) |>
+  # Removing participant 28_56 who didn't complete the questionnaire
+  filter(id != "2337_28_56") |>
+  rowwise() |>
+  mutate(across(.cols = (2:49), .fns = as.integer),
+         saFearAnxiety = sum(LSAS1FearAnxiety, LSAS2FearAnxiety, LSAS3FearAnxiety,
+                             LSAS4FearAnxiety, LSAS5FearAnxiety, LSAS6FearAnxiety,
+                             LSAS7FearAnxiety, LSAS8FearAnxiety, LSAS9FearAnxiety,
+                             LSAS10FearAnxiety, LSAS11FearAnxiety, LSAS12FearAnxiety,
+                             LSAS13FearAnxiety, LSAS14FearAnxiety, LSAS15FearAnxiety,
+                             LSAS16FearAnxiety, LSAS17FearAnxiety, LSAS18FearAnxiety,
+                             LSAS19FearAnxiety, LSAS20FearAnxiety, LSAS21FearAnxiety,
+                             LSAS22FearAnxiety, LSAS23FearAnxiety, LSAS24FearAnxiety),
+         saAvoidance = sum(LSAS1Avoidance, LSAS2Avoidance, LSAS3Avoidance,
+                           LSAS4Avoidance, LSAS5Avoidance, LSAS6Avoidance,
+                           LSAS7Avoidance, LSAS8Avoidance, LSAS9Avoidance,
+                           LSAS10Avoidance, LSAS11Avoidance, LSAS12Avoidance,
+                           LSAS13Avoidance, LSAS14Avoidance, LSAS15Avoidance,
+                           LSAS16Avoidance, LSAS17Avoidance, LSAS18Avoidance,
+                           LSAS19Avoidance, LSAS20Avoidance, LSAS21Avoidance,
+                           LSAS22Avoidance, LSAS23Avoidance, LSAS24Avoidance),
+         saTotal = sum(saFearAnxiety, saAvoidance)) |>
+  as.data.frame()
+```
+
+
+### Descriptives
+```{r}
+psych::describe(social_anxiety |> dplyr::select(saFearAnxiety, saAvoidance,
+                                                saTotal))
+ 
+rcorr(as.matrix(social_anxiety |> dplyr::select(saFearAnxiety, saAvoidance,
+                                                saTotal), type = "pearson")) 
+
+ggplot(social_anxiety, aes(saTotal)) +
+  geom_histogram(bins = 10)
+```
+
+
+### Internal reliability
+```{r}
+social_anxiety_alpha <- social_anxiety |>
+  dplyr::select(-id, -saFearAnxiety, -saAvoidance, -saTotal)
+
+alpha(social_anxiety_alpha)
+```
+
+
+## Friendship functions
+### Data prep
+```{r}
+# data.frame
+friendship_functions <- df_visit1 |>
+  dplyr::select(id, MFQFF1, MFQFF2, MFQFF3, MFQFF4, MFQFF5, MFQFF6, MFQFF7,
+                MFQFF8, MFQFF9, MFQFF10, MFQFF11, MFQFF12, MFQFF13, MFQFF14,
+                MFQFF15, MFQFF16, MFQFF17, MFQFF18, MFQFF19, MFQFF20, MFQFF21,
+                MFQFF22, MFQFF23, MFQFF24, MFQFF25, MFQFF26, MFQFF27, MFQFF28,
+                MFQFF29, MFQFF30) |>
+  rowwise() |>
+  mutate(MFQFF24 = as.numeric(MFQFF24),
+         ffStimulatingCompanionship = mean(c(MFQFF4, MFQFF7, MFQFF18,
+                                             MFQFF22, MFQFF28)),
+         ffHelp = mean(c(MFQFF1, MFQFF9, MFQFF13, MFQFF24, MFQFF27)),
+         ffIntimacy = mean(c(MFQFF3, MFQFF8, MFQFF15, MFQFF21, MFQFF29)),
+         ffReliableAlliance = mean(c(MFQFF5, MFQFF12, MFQFF16, MFQFF20, MFQFF26)),
+         ffSelfValidation = mean(c(MFQFF2, MFQFF11, MFQFF14, MFQFF23, MFQFF30)),
+         ffEmotionalSecurity = mean(c(MFQFF6, MFQFF10, MFQFF17, MFQFF19, MFQFF25)),
+         ffFriendshipFunctions = mean(c(MFQFF1, MFQFF2, MFQFF3, MFQFF4, MFQFF5,
+                                        MFQFF6, MFQFF7, MFQFF8, MFQFF9, MFQFF10,
+                                        MFQFF11, MFQFF12, MFQFF13, MFQFF14, 
+                                        MFQFF15, MFQFF16, MFQFF17, MFQFF18,
+                                        MFQFF19, MFQFF20, MFQFF21, MFQFF22,
+                                        MFQFF23, MFQFF24, MFQFF25, MFQFF26,
+                                        MFQFF27, MFQFF28, MFQFF29, MFQFF30))) |>
+  as.data.frame()
+```
+
+
+### Descriptives
+```{r}
+psych::describe(friendship_functions |> dplyr::select(ffStimulatingCompanionship, ffHelp,
+                                                      ffIntimacy, ffReliableAlliance,
+                                                      ffSelfValidation, ffEmotionalSecurity))
+ 
+rcorr(as.matrix(friendship_functions |> dplyr::select(ffStimulatingCompanionship, ffHelp,
+                                                      ffIntimacy, ffReliableAlliance,
+                                                      ffSelfValidation, ffEmotionalSecurity), 
+                type = "pearson")) 
+```
+
+
+### Internal Reliability
+```{r}
+friendship_functions_alpha <- friendship_functions |>
+  dplyr::select(MFQFF1, MFQFF2, MFQFF3, MFQFF4, MFQFF5, MFQFF6, MFQFF7, MFQFF8,
+                MFQFF9, MFQFF10, MFQFF11, MFQFF12, MFQFF13, MFQFF14, MFQFF15,
+                MFQFF16, MFQFF17, MFQFF18, MFQFF19, MFQFF20, MFQFF21, MFQFF22,
+                MFQFF23, MFQFF24, MFQFF25, MFQFF26, MFQFF27, MFQFF28, MFQFF29,
+                MFQFF30)
+
+alpha(friendship_functions_alpha)
+```
+
+
+## Respondent affection
+### Data prep
+```{r}
+respondent_affection <- df_visit1 |>
+  dplyr::select(id, MFQRA1, MFQRA2, MFQRA3, MFQRA4, MFQRA5, MFQRA6, MFQRA7,
+                MFQRA8, MFQRA9, MFQRA10, MFQRA11, MFQRA12, MFQRA13, MFQRA14,
+                MFQRA15, MFQRA16) |>
+  rowwise() |>
+  mutate(raRespondentAffection = mean(c(MFQRA1, MFQRA2, MFQRA3, MFQRA4, MFQRA5,
+                                        MFQRA6, MFQRA7, MFQRA8, MFQRA9, MFQRA10,
+                                        MFQRA11, MFQRA12, MFQRA13, MFQRA14,
+                                        MFQRA15, MFQRA16))) |>
+  as.data.frame()
+```
+
+
+### Internal reliability
+```{r}
+respondent_affection_alpha <- respondent_affection |>
+  dplyr::select(-id, -raRespondentAffection)
+
+alpha(respondent_affection_alpha)
+```
+
+
+# Visit 2 Questionnaires 
+## Data prep
+```{r}
+df_visit2 <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/questionnaires/final_raw_qst_data/bffs_visit2_qsts_04272023.csv") |>
+  mutate_all(function(x) {
+    if (is.character(x)) {
+      case_when(
+        x == "Do not wish to respond" ~ NA_character_,
+        TRUE ~ x
+      )
+    } else {
+      x
+    }
+  }) 
+
+dob <- df_visit1 |>
+  dplyr::select(id, D1) 
+
+df_visit2 <- full_join(df_visit2, dob) |>
+  mutate(Timestamp = ifelse(id =="2337_01_02", "2022-4-25", 
+                            ifelse(id == "2337_06_11", "2022-3-29", 
+                                   ifelse(id == "2337_06_12", "2022-3-31", 
+                                          ifelse(id == "2337_18_35", "2022-12-3",
+                                                 ifelse(id == "2337_18_36", "2022-12-6",
+                                                        ifelse(id == "2337_19_38", "2022-11-9",
+                                                               ifelse(id == "2337_27_53", "2023-3-16",
+                                                                      ifelse(id == "2337_28_55", "2023-3-31",
+                                                                             ifelse(id == "2337_28_56", "2023-4-11", 
+                                                                                    ifelse(id == "2337_31_61", "2023-3-30",
+                                                                                           ifelse(id == "2337_36_71", "2023-4-25", 
+                                                                                                  ifelse(id == "2337_36_72", "2023-4-25", Timestamp)))))))))))),
+       ageVisit2 = as.numeric(difftime(as.Date(Timestamp), as.Date(D1), 
+                                  units ="days"))/365.25) |>
+  rename(visitDate2 = Timestamp) 
+```
+
+
+## Social interaction
+### Data prep
+```{r}
+df_visit2 <- df_visit2 |>
+  rename_with(~paste0(.x, "Visit2"), starts_with("SI")) |>
+  mutate(SI2Visit2r =
+         recode(SI2Visit2, `1` = 8, `2` = 7, `3` = 5, `4` = 4, `5` = 3, `7` = 2, 
+                `8` = 1)) |>
+  rowwise() |>
+  mutate(siQualityVisit2 = mean(c(SI1Visit2, SI2Visit2r, SI3Visit2, SI4Visit2, 
+                            SI5Visit2, SI10Visit2, SI11Visit2)),
+         siDisclosureVisit2 = mean(c(SI6Visit2, SI7Visit2)),
+         siEngagementVisit2 = mean(c(SI8Visit2, SI9Visit2)),
+         siOverallVisit2 = mean(c(SI1Visit2, SI2Visit2r, SI3Visit2, SI4Visit2, 
+                                  SI5Visit2, SI10Visit2, SI11Visit2, SI6Visit2, 
+                                  SI7Visit2, SI8Visit2, SI9Visit2))) |>
+     as.data.frame() 
+```
+
+
+### Descriptives
+```{r}
+psych::describe(df_visit2 |> dplyr::select(siQualityVisit2, siDisclosureVisit2, 
+                                           siEngagementVisit2))
+ 
+rcorr(as.matrix(df_visit2 |> dplyr::select(siQualityVisit2, siDisclosureVisit2, 
+                                           siEngagementVisit2), type = "pearson")) 
+```
+
+
+### Internal reliability
+```{r}
+# Quality
+interaction_quality_alpha2 <- df_visit2 |>
+  dplyr::select(SI1Visit2, SI2Visit2r, SI3Visit2, SI4Visit2, SI5Visit2, 
+                SI10Visit2, SI11Visit2)
+
+alpha(interaction_quality_alpha2)
+
+# Disclosure
+interaction_disclosure_alpha2 <- df_visit2 |>
+  dplyr::select(SI6Visit2, SI7Visit2)
+
+alpha(interaction_disclosure_alpha2)
+
+# Engagement
+interaction_engagement_alpha2 <- df_visit2 |>
+  dplyr::select(SI8Visit2, SI9Visit2)
+
+alpha(interaction_engagement_alpha2)
+
+# Overall
+interaction_overall_alpha2 <- df_visit2 |>
+  dplyr::select(SI1Visit2, SI2Visit2r, SI3Visit2, SI4Visit2, SI5Visit2, 
+                SI10Visit2, SI11Visit2, SI6Visit2, SI7Visit2, SI8Visit2, 
+                SI9Visit2)
+
+alpha(interaction_overall_alpha2)
+```
+
+
+# Merge and Export all questionnaires
+```{r}
+df_all <- Reduce(function(...) {full_join(...)}, list(demographics, 
+                                                      interaction, 
+                                                      social_anxiety, 
+                                                      friendship_functions,
+                                                      respondent_affection, 
+                                                      df_visit2)) |>
+  #filter(!is.na(visitDate1)) |> 
+  mutate(weeksBetweenVisits = as.numeric(difftime(as.Date(visitDate2), as.Date(visitDate1), 
+                                  units ="weeks"))) |>
+  separate(id, c("study", "dyad", "id")) |>
+  dplyr::select(dyad, id, ageVisit1, ageVisit2, weeksBetweenVisits, handedness, race, 
+                raceOther, ethnicity, ethnicityOther, sexAssigned, genderIdentity, 
+                genderIdentityOther, sexualIdentity, sexualIdentityOther, 
+                romAttract, sexAttract, siQualityVisit1, siDisclosureVisit1, 
+                siEngagementVisit1, saFearAnxiety, saAvoidance, saTotal, 
+                ffStimulatingCompanionship, ffHelp, ffIntimacy, ffReliableAlliance, 
+                ffSelfValidation, ffEmotionalSecurity, ffFriendshipFunctions, 
+                raRespondentAffection, siQualityVisit2, siDisclosureVisit2, 
+                siEngagementVisit2, uncomfortableWatchingSelf, amountEyesClosed,
+                reasonEyesClosed, everything(), -study, -visitDate1, -visitDate2,
+                -D1)
+
+outpath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/questionnaires/output"
+write.csv(df_all, paste0(outpath, "/bffs_questionnaires_", 
+                         format(Sys.time(), "%m%d%Y"), ".csv"), row.names = FALSE)
+```
+

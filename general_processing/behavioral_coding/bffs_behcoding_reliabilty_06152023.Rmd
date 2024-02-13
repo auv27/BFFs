@@ -1,0 +1,46 @@
+---
+title: "Reliability"
+author: "Alicia Vallorani"
+date: "June 15, 2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse)
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/reliability_tools/calculate_percent_match_tolerance.R")
+```
+
+
+```{r}
+# homepath - edit to match user
+homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/behavioral_coding/reliabilty"
+
+# Path to raw data
+filepath <- file.path(homepath,"/training/output/", fsep = "")
+```
+
+
+## Loop through frame-by-frame files
+```{r}
+# Original coder
+av <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/behavioral_coding/reliabilty/training/output/dyad_11/av.csv") 
+
+# Reliability coder
+ml <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_processing/behavioral_coding/reliabilty/training/output/dyad_11/ml.csv") 
+```
+
+
+# Calculate reliability with +/-3 second tolerance
+```{r}
+calculate_percent_match_tolerance(av$talkingWithHands, ml$talkingWithHands)
+calculate_percent_match_tolerance(av$expressedAffectLeft, ml$expressedAffectLeft)
+calculate_percent_match_tolerance(av$expressedAffectRight, ml$expressedAffectRight)
+calculate_percent_match_tolerance(av$socialDiscomfortLeft, ml$socialDiscomfortLeft)
+calculate_percent_match_tolerance(av$socialDiscomfortRight, ml$socialDiscomfortRight)
+calculate_percent_match_tolerance(av$explicitMentalizing, ml$explicitMentalizing) 
+```

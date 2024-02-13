@@ -1,0 +1,624 @@
+---
+title: "bffs_neuralsim_cleaning_11282023"
+author: "Alicia Vallorani"
+date: "2023-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, fs, irr, broom)
+
+project_path <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity" 
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/visualization_tools/basic_theme.R")
+theme_set(basic_theme)
+
+# File paths
+self_path <- file.path(project_path,"/data/for_prep/self_deconvolution_11142023/deconvolved/self_aligned_11202023", fsep = "")
+
+friend_path <- file.path(project_path,"/data/for_prep/friend_deconvolution_11142023/deconvolved/friend_aligned_11202023", fsep = "")
+
+# For exporting figures
+out_path <- file.path(project_path,"/data/for_analysis", fsep = "")
+```
+
+
+# fMRI data
+## Self data
+```{r}
+# Read in the data
+self_files <- dir_ls(self_path, regexp = "\\.csv.gz$")
+self_data <- self_files |>
+  map_dfr(read_csv, .id = "id") |>
+  mutate(id = str_sub(id, start = 218, end = -33),
+         id = paste0(substr(id, 1, 4), "_", 
+                     substr(id, 5, 6), "_", 
+                     substr(id, 7, 8)),
+         atlasName = recode(atlas_value, 
+                            `1` = "dmPFC", 
+                            `2` = "rTPJ",
+                            `4` = "lTPJ", 
+                            `5` = "precuneus",
+                            `7` = "vmPFC",
+                            `8` = "cerebellum1",
+                            `10` = "cerebellum2",
+                            `13` = "POS1")) |> # parieto‐occipital sulcus
+  filter(evt_time >= 0) |>
+  group_by(id, trial, atlasName) |>
+  mutate(time = seq_along(evt_time)) |>
+  ungroup() |>
+  rename(deconMean = decon_mean) |>
+  select(id, atlasName, trial, time, deconMean)
+
+# Read in trial info
+self_trials <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/output/bffs_self_trialdata_09252023.csv") |>
+  rename(runName = run_name) |>
+  select(id, runName, trial, clips) 
+
+# Merge data
+self <- left_join(self_data, self_trials) |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id)) |>
+  select(-study) |>
+  # Mistake where 23372243 has extra trials that don't exist
+  filter(trial <= 18)
+```
+
+
+## Friend data
+```{r}
+# Read in the data
+friend_files <- dir_ls(friend_path, regexp = "\\.csv.gz$")
+friend_data <- friend_files |>
+  map_dfr(read_csv, .id = "id") |>
+  mutate(id = str_sub(id, start = 222, end = -33),
+         id = paste0(substr(id, 1, 4), "_", 
+                     substr(id, 5, 6), "_", 
+                     substr(id, 7, 8)),
+         atlasName = recode(atlas_value, 
+                            `1` = "dmPFC", 
+                            `2` = "rTPJ",
+                            `4` = "lTPJ", 
+                            `5` = "precuneus",
+                            `7` = "vmPFC",
+                            `8` = "cerebellum1",
+                            `10` = "cerebellum2",
+                            `13` = "POS1")) |> # parieto‐occipital sulcus
+  filter(evt_time >= 0) |>
+  group_by(id, trial, atlasName) |>
+  mutate(time = seq_along(evt_time)) |>
+  ungroup() |>
+  rename(deconMean = decon_mean) |>
+  select(id, atlasName, trial, time, deconMean)
+
+# Read in trial info
+friend_trials <- read.csv("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/output/bffs_friend_trialdata_09252023.csv") |>
+  rename(runName = run_name) |>
+  select(id, runName, trial, clips)
+
+# Merge data
+friend <- left_join(friend_data, friend_trials) |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id)) |>
+  select(-study)
+```
+
+
+## Classic neural similarity (same videos)
+For each person in the dyad their self run matches their partner's friend run.
+```{r}
+# ICC where odd is self and even is friend
+## Separate data.frames
+odd_participants_self_1 <- self |>
+  filter(id %% 2 != 0) 
+
+even_participants_friend_1 <- friend |>
+  filter(id %% 2 == 0) 
+
+## Rejoin data.frames
+cns_oself_efriend <- full_join(odd_participants_self_1,
+                               even_participants_friend_1) |>
+  filter(atlasName == "dmPFC" | atlasName == "vmPFC" |
+         atlasName == "rTPJ"  | atlasName == "lTPJ")
+
+## Split data.frames
+cns_oself_efriend_list <- split(cns_oself_efriend, 
+                                cns_oself_efriend[c("dyad", "atlasName", 
+                                                    "clips")])
+## Pivot data.frames for calculation
+cns_oself_efriend_list <- lapply(cns_oself_efriend_list, function(tibble) {
+  as.data.frame(select(tibble, id, deconMean)) |>
+  group_by(id) |>
+  mutate(row = seq_along(id)) |>
+  pivot_wider(names_from = id, values_from = deconMean) |>
+  select(-row)
+})
+
+## Calculate ICC
+df_names <- names(cns_oself_efriend_list)
+icc_values <- numeric(length(df_names))
+
+for (i in seq_along(df_names)) {
+  df_name <- df_names[i]
+
+  icc_call <- paste0("icc(cns_oself_efriend_list[['", df_name, "']], model = 'twoway', type = 'agreement')")
+
+  icc_result <- eval(parse(text = icc_call))
+  
+  icc_values[i] <- icc_result$value
+}
+
+## Finalize data.frame
+cns_oself_efriend_icc <- data.frame(df_name = df_names, icc_value = icc_values) |>
+  separate(df_name, c("dyad", "atlasName", "clips")) |>
+  mutate(neuralSimCondition = "classic",
+         neuralSimConditionSpecific = "odd_self_even_friend") |>
+  rename(neuralSimIntraClassCorrelation = icc_value)
+
+
+
+# ICC where even is self and odd is friend
+## Separate data.frames
+odd_participants_friend_1 <- friend |>
+  filter(id %% 2 != 0) 
+
+even_participants_self_1 <- self |>
+  filter(id %% 2 == 0) 
+
+## Rejoin data.frames
+cns_eself_ofriend <- full_join(odd_participants_friend_1,
+                               even_participants_self_1) |>
+  filter(atlasName == "dmPFC" | atlasName == "vmPFC" |
+         atlasName == "rTPJ"  | atlasName == "lTPJ")
+
+## Split data.frames
+cns_eself_ofriend_list <- split(cns_eself_ofriend, 
+                                cns_eself_ofriend[c("dyad", "atlasName", 
+                                                    "clips")])
+## Pivot data.frames for calculation
+cns_eself_ofriend_list <- lapply(cns_eself_ofriend_list, function(tibble) {
+  as.data.frame(select(tibble, id, deconMean)) |>
+  group_by(id) |>
+  mutate(row = seq_along(id)) |>
+  pivot_wider(names_from = id, values_from = deconMean) |>
+  select(-row)
+})
+
+## Calculate ICC
+df_names <- names(cns_eself_ofriend_list)
+icc_values <- numeric(length(df_names))
+
+for (i in seq_along(df_names)) {
+  df_name <- df_names[i]
+
+  icc_call <- paste0("icc(cns_eself_ofriend_list[['", df_name, "']], model = 'twoway', type = 'agreement')")
+
+  icc_result <- eval(parse(text = icc_call))
+  
+  icc_values[i] <- icc_result$value
+}
+
+## Finalize data.frame
+cns_eself_ofriend_icc <- data.frame(df_name = df_names, icc_value = icc_values) |>
+  separate(df_name, c("dyad", "atlasName", "clips")) |>
+  mutate(neuralSimCondition = "classic",
+         neuralSimConditionSpecific = "even_self_odd_friend") |>
+  rename(neuralSimIntraClassCorrelation = icc_value)
+```
+
+
+## Perspective neural similarity (opposite video same moment)
+For each person in the dyad, their self run matches their friend's self run and
+their friend run matches their friend's friend run
+```{r}
+# ICC where odd is self and even is self
+## Rejoin data.frames
+cns_oself_eself <- full_join(odd_participants_self_1,
+                             even_participants_self_1) |>
+  filter(atlasName == "dmPFC" | atlasName == "vmPFC" |
+         atlasName == "rTPJ"  | atlasName == "lTPJ")
+
+## Split data.frames
+cns_oself_eself_list <- split(cns_oself_eself, cns_oself_eself[c("dyad", 
+                                                                 "atlasName", 
+                                                                 "clips")])
+## Pivot data.frames for calculation
+cns_oself_eself_list <- lapply(cns_oself_eself_list, function(tibble) {
+  as.data.frame(select(tibble, id, deconMean)) |>
+  group_by(id) |>
+  mutate(row = seq_along(id)) |>
+  pivot_wider(names_from = id, values_from = deconMean) |>
+  select(-row)
+})
+
+## Calculate ICC
+df_names <- names(cns_oself_eself_list)
+icc_values <- numeric(length(df_names))
+
+for (i in seq_along(df_names)) {
+  df_name <- df_names[i]
+
+  icc_call <- paste0("icc(cns_oself_eself_list[['", df_name, "']], model = 'twoway', type = 'agreement')")
+
+  icc_result <- eval(parse(text = icc_call))
+  
+  icc_values[i] <- icc_result$value
+}
+
+## Finalize data.frame
+cns_oself_eself_icc <- data.frame(df_name = df_names, icc_value = icc_values) |>
+  separate(df_name, c("dyad", "atlasName", "clips")) |>
+  mutate(neuralSimCondition = "perspective",
+         neuralSimConditionSpecific = "odd_self_even_self") |>
+  rename(neuralSimIntraClassCorrelation = icc_value)
+
+
+
+# ICC where even is friend and odd is friend
+## Rejoin data.frames
+cns_efriend_ofriend <- full_join(odd_participants_friend_1,
+                                 even_participants_friend_1) |>
+  filter(atlasName == "dmPFC" | atlasName == "vmPFC" |
+         atlasName == "rTPJ"  | atlasName == "lTPJ")
+
+## Split data.frames
+cns_efriend_ofriend_list <- split(cns_efriend_ofriend, 
+                                  cns_efriend_ofriend[c("dyad", "atlasName", 
+                                                        "clips")])
+## Pivot data.frames for calculation
+cns_efriend_ofriend_list <- lapply(cns_efriend_ofriend_list, function(tibble) {
+  as.data.frame(select(tibble, id, deconMean)) |>
+  group_by(id) |>
+  mutate(row = seq_along(id)) |>
+  pivot_wider(names_from = id, values_from = deconMean) |>
+  select(-row)
+})
+
+## Calculate ICC
+df_names <- names(cns_efriend_ofriend_list)
+icc_values <- numeric(length(df_names))
+
+for (i in seq_along(df_names)) {
+  df_name <- df_names[i]
+
+  icc_call <- paste0("icc(cns_efriend_ofriend_list[['", df_name, "']], model = 'twoway', type = 'agreement')")
+
+  icc_result <- eval(parse(text = icc_call))
+  
+  icc_values[i] <- icc_result$value
+}
+
+## Finalize data.frame
+cns_efriend_ofriend_icc <- data.frame(df_name = df_names, icc_value = icc_values) |>
+  separate(df_name, c("dyad", "atlasName", "clips")) |>
+  mutate(neuralSimCondition = "perspective",
+         neuralSimConditionSpecific = "odd_friend_even_friend") |>
+  rename(neuralSimIntraClassCorrelation = icc_value)
+```
+
+
+## Merge neural similarity data
+```{r}
+neural_similarity_data <- Reduce(function(...) {full_join(...)}, 
+                                 list(cns_oself_efriend_icc, 
+                                      cns_eself_ofriend_icc,
+                                      cns_oself_eself_icc,
+                                      cns_efriend_ofriend_icc)) |>
+  mutate(dyad = as.numeric(dyad))
+```
+
+
+# Participant responses in scanner
+## Self data
+```{r}
+self_dir <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/self"
+self_files <- dir_ls(self_dir, regexp = "\\.csv$")
+
+self_df_tri <- self_files |>
+  map_dfr(read_csv, col_types = list(pos_resp.keys = col_double(),
+                                     neg_resp.keys = col_double(),
+                                     participant = col_double(),
+                                     dyad = col_double())) |>
+  mutate(id = substr(clips, 29, 38),
+         clips = substr(clips, 40, 43)) |>
+  select(id, clips, pos_resp.keys, neg_resp.keys, run1.thisTrialN) |>
+  rename(feltPositive = pos_resp.keys,
+         feltNegative = neg_resp.keys,
+         trial = run1.thisTrialN) |>
+  filter(id == "2337_02_03" | id == "2337_02_04" | id == "2337_03_05" |
+         id == "2337_03_06" | id == "2337_04_07" | id == "2337_05_10" |
+         id == "2337_07_13" | id == "2337_07_14" | id == "2337_08_15" |
+         id == "2337_08_16" | id == "2337_09_17" | id == "2337_10_19" | 
+         id == "2337_11_21" | id == "2337_11_22" | id == "2337_12_23" |
+         id == "2337_12_24" | id == "2337_13_25" | id == "2337_13_26" |
+         id == "2337_14_27" | id == "2337_14_28" | id == "2337_15_29" |
+         id == "2337_15_30" | id == "2337_16_31" | id == "2337_16_32" |
+         id == "2337_19_37" | id == "2337_20_39" | id == "2337_22_43" |
+         id == "2337_22_44" | id == "2337_23_45" | id == "2337_23_46" |
+         id == "2337_24_48" | id == "2337_27_54" | id == "2337_30_59" |
+         id == "2337_30_60" | id == "2337_32_63" | id == "2337_32_64" |
+         id == "2337_33_65" | id == "2337_34_67" | id == "2337_34_68" |
+         id == "2337_35_69" | id == "2337_35_70" | id == "2337_37_73" |
+         id == "2337_37_74") |>
+  # Recode left had response values
+  mutate(feltPositive = ifelse(feltPositive == 9, 1,
+                               ifelse(feltPositive == 8, 2,
+                                      ifelse(feltPositive == 7, 3,
+                                             ifelse(feltPositive == 6, 4,
+                                                    feltPositive)))),
+         feltNegative = ifelse(feltNegative == 9, 1,
+                               ifelse(feltNegative == 8, 2,
+                                      ifelse(feltNegative == 7, 3,
+                                             ifelse(feltNegative == 6, 4,
+                                                    feltNegative))))) |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id),
+         feltPositive = recode(feltPositive, `1` = 5, `2` = 6, 
+                                             `3` = 7, `4` = 8),
+         # Higher scores represent more positive affect
+         feltPositiveMinusNegative = feltPositive - feltNegative,
+         trial = recode(trial, `0` = 1, `1` = 2, `2` = 3, `3` = 4, `4` = 5,
+                               `5` = 6, `6` = 7, `7` = 8, `8` = 9, `9` = 10,
+                               `10` = 11, `11` = 12, `12` = 13, `13` = 14,
+                               `14` = 15, `15` = 16, `16` = 17, `17` = 18)) |>
+  select(-study) 
+```
+
+
+## Friend data
+```{r}
+friend_dir <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/friend"
+friend_files <- dir_ls(friend_dir, regexp = "\\.csv$")
+
+friend_df_tri <- friend_files |> 
+  map_dfr(read_csv,  .id = "id", col_types = list(pos_resp.keys = col_double(),
+                                                  neg_resp.keys = col_double(),
+                                                  participant = col_double(),
+                                                  dyad = col_double(),
+                                                  frameRate = col_double())) |>
+  mutate(id = substr(id, 150, 159),
+         clips = substr(clips, 40, 43)) |>
+  select(id, clips, pos_resp.keys, neg_resp.keys, run2.thisTrialN) |>
+  rename(feltPositive = pos_resp.keys,
+         feltNegative = neg_resp.keys,
+         trial = run2.thisTrialN) |>
+  filter(id == "2337_02_03" | id == "2337_02_04" | id == "2337_03_05" |
+         id == "2337_03_06" | id == "2337_04_07" | id == "2337_05_10" |
+         id == "2337_07_13" | id == "2337_07_14" | id == "2337_08_15" |
+         id == "2337_08_16" | id == "2337_09_17" | id == "2337_10_19" | 
+         id == "2337_11_21" | id == "2337_11_22" | id == "2337_12_23" |
+         id == "2337_12_24" | id == "2337_13_25" | id == "2337_13_26" |
+         id == "2337_14_27" | id == "2337_14_28" | id == "2337_15_29" |
+         id == "2337_15_30" | id == "2337_16_31" | id == "2337_16_32" |
+         id == "2337_19_37" | id == "2337_20_39" | id == "2337_22_43" |
+         id == "2337_22_44" | id == "2337_23_45" | id == "2337_23_46" |
+         id == "2337_24_48" | id == "2337_27_54" | id == "2337_30_59" |
+         id == "2337_30_60" | id == "2337_32_63" | id == "2337_32_64" |
+         id == "2337_33_66" | id == "2337_34_67" | id == "2337_34_68" |
+         id == "2337_35_69" | id == "2337_35_70" | id == "2337_37_73" |
+         id == "2337_37_74" | id == "2337_05_09") |>
+  # Recode left had response values
+  mutate(feltPositive = ifelse(feltPositive == 9, 1,
+                               ifelse(feltPositive == 8, 2,
+                                      ifelse(feltPositive == 7, 3,
+                                             ifelse(feltPositive == 6, 4,
+                                                    feltPositive)))),
+         feltNegative = ifelse(feltNegative == 9, 1,
+                               ifelse(feltNegative == 8, 2,
+                                      ifelse(feltNegative == 7, 3,
+                                             ifelse(feltNegative == 6, 4,
+                                                    feltNegative))))) |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id),
+         run = "friend",
+         feltPositive = recode(feltPositive, `1` = 5, `2` = 6, 
+                                             `3` = 7, `4` = 8),
+         # Higher scores represent more positive affect
+         feltPositiveMinusNegative = feltPositive - feltNegative,
+         trial = recode(trial, `0` = 1, `1` = 2, `2` = 3, `3` = 4, `4` = 5,
+                               `5` = 6, `6` = 7, `7` = 8, `8` = 9, `9` = 10,
+                               `10` = 11, `11` = 12, `12` = 13, `13` = 14,
+                               `14` = 15, `15` = 16, `16` = 17, `17` = 18)) |>
+  select(-study) |>
+  filter(!is.na(trial))
+```
+
+
+## Classic neural similarity ratings
+```{r}
+# First merge
+odd_participants_self_ratings_1 <- self_df_tri |>
+  filter(id %% 2 != 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+even_participants_friend_ratings_1 <- friend_df_tri |>
+  filter(id %% 2 == 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+classic_neural_similarity_ratings_1 <- full_join(odd_participants_self_ratings_1,
+                                                 even_participants_friend_ratings_1) |>
+  mutate(neuralSimCondition = "classic",
+         neuralSimConditionSpecific = "odd_self_even_friend") |>
+  select(dyad, id, trial, clips, everything())
+  
+# Second merge
+even_participants_self_ratings_1 <- self_df_tri |>
+  filter(id %% 2 == 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+odd_participants_friend_ratings_1 <- friend_df_tri |>
+  filter(id %% 2 != 0)  |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+classic_neural_similarity_ratings_2 <- full_join(even_participants_self_ratings_1,
+                                                 odd_participants_friend_ratings_1) |>
+  mutate(neuralSimCondition = "classic",
+         neuralSimConditionSpecific = "even_self_odd_friend") 
+
+# Final merge
+classic_neural_similarity_ratings <- full_join(classic_neural_similarity_ratings_1,
+                                               classic_neural_similarity_ratings_2) 
+
+classic_neural_similarity_ratings_odd <- classic_neural_similarity_ratings |>
+  filter(id %% 2 != 0) |>
+  rename(idOdd = id, trialOdd = trial, 
+         feltPositiveMinusNegativeOdd = feltPositiveMinusNegative)
+
+classic_neural_similarity_ratings_even <- classic_neural_similarity_ratings |>
+  filter(id %% 2 == 0) |>
+  rename(idEven = id, trialEven = trial, 
+         feltPositiveMinusNegativeEven = feltPositiveMinusNegative)
+
+classic_neural_similarity_ratings <- full_join(classic_neural_similarity_ratings_odd,
+                                               classic_neural_similarity_ratings_even) |>
+  select(dyad, idOdd, idEven, trialOdd, trialEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, feltPositiveMinusNegativeOdd, feltPositiveMinusNegativeEven) |>
+  mutate(ratingSynchrony = abs(feltPositiveMinusNegativeOdd - feltPositiveMinusNegativeEven)*-1)
+```
+
+
+## Perspective neural similarty ratings
+```{r}
+# First merge
+odd_participants_self_ratings_2 <- self_df_tri |>
+  filter(id %% 2 != 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+even_participants_self_ratings_2 <- self_df_tri |>
+  filter(id %% 2 == 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative)
+
+perspective_neural_similarity_ratings_1 <- full_join(odd_participants_self_ratings_2,
+                                                     even_participants_self_ratings_2) |>
+  mutate(neuralSimCondition = "perspective",
+         neuralSimConditionSpecific = "odd_self_even_self") 
+
+# Second merge
+odd_participants_friend_ratings_2 <- friend_df_tri |>
+  filter(id %% 2 != 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+even_participants_friend_ratings_2 <- friend_df_tri |>
+  filter(id %% 2 == 0) |>
+  select(dyad, id, trial, clips, feltPositiveMinusNegative) 
+
+perspective_neural_similarity_ratings_2 <- full_join(odd_participants_friend_ratings_2,
+                                                     even_participants_friend_ratings_2) |>
+  mutate(neuralSimCondition = "perspective",
+         neuralSimConditionSpecific = "odd_friend_even_friend") 
+
+# Final merge
+perspective_neural_similarity_ratings <- full_join(perspective_neural_similarity_ratings_1,
+                                                   perspective_neural_similarity_ratings_2) 
+
+perspective_neural_similarity_ratings_odd <- perspective_neural_similarity_ratings |>
+  filter(id %% 2 != 0) |>
+  rename(idOdd = id, trialOdd = trial, 
+         feltPositiveMinusNegativeOdd = feltPositiveMinusNegative)
+
+perspective_neural_similarity_ratings_even <- perspective_neural_similarity_ratings |>
+  filter(id %% 2 == 0) |>
+  rename(idEven = id, trialEven = trial, 
+         feltPositiveMinusNegativeEven = feltPositiveMinusNegative)
+
+perspective_neural_similarity_ratings <- full_join(perspective_neural_similarity_ratings_odd,
+                                                   perspective_neural_similarity_ratings_even) |>
+  select(dyad, idOdd, idEven, trialOdd, trialEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, feltPositiveMinusNegativeOdd, feltPositiveMinusNegativeEven) |>
+  mutate(ratingSynchrony = abs(feltPositiveMinusNegativeOdd - feltPositiveMinusNegativeEven)*-1)
+```
+
+
+# Create synchrony and individual ratings datasets
+```{r}
+# Synchrony ratings
+classic_neural_similarity_ratings_wide <- classic_neural_similarity_ratings |>
+  select(dyad, idOdd, idEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, ratingSynchrony)
+
+perspective_neural_similarity_ratings_wide <- perspective_neural_similarity_ratings |>
+  select(dyad, idOdd, idEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, ratingSynchrony)
+
+neural_similarity_ratings_wide <- full_join(classic_neural_similarity_ratings_wide,
+                                            perspective_neural_similarity_ratings_wide)
+
+neural_similarity_data_synchrony <- full_join(neural_similarity_data,
+                                              neural_similarity_ratings_wide) |>
+  # Fix missing ids
+  mutate(idOdd = ifelse(dyad == 5, 9,
+                        ifelse(dyad == 24, 47,
+                               ifelse(dyad == 27, 53,
+                                      ifelse(dyad == 33, 65, 
+                                             idOdd)))),
+         idEven = ifelse(dyad == 4, 8,
+                         ifelse(dyad == 9, 18,
+                                ifelse(dyad == 10, 20,
+                                       ifelse(dyad == 19, 38,
+                                              ifelse(dyad == 20, 40,
+                                                     ifelse(dyad == 33, 66, 
+                                                            idEven))))))) |>
+  pivot_longer(7:8, names_to = "type", values_to = "id") |>
+  select(dyad, id, ratingSynchrony, everything(), -type)
+
+# Individual ratings
+classic_neural_similarity_ratings_long <- classic_neural_similarity_ratings |>
+  select(dyad, idOdd, idEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, feltPositiveMinusNegativeOdd,
+         feltPositiveMinusNegativeEven)
+
+perspective_neural_similarity_ratings_long <- perspective_neural_similarity_ratings |>
+  select(dyad, idOdd, idEven, clips, neuralSimCondition,
+         neuralSimConditionSpecific, feltPositiveMinusNegativeOdd,
+         feltPositiveMinusNegativeEven)
+
+neural_similarity_ratings_long <- full_join(classic_neural_similarity_ratings_long,
+                                            perspective_neural_similarity_ratings_long)
+
+neural_similarity_ratings_odd <- neural_similarity_ratings_long |>
+  select(dyad, idOdd, clips, neuralSimCondition, neuralSimConditionSpecific,
+         feltPositiveMinusNegativeOdd) |>
+  rename(id = idOdd, feltPositiveMinusNegative = feltPositiveMinusNegativeOdd)
+
+neural_similarity_ratings_even <- neural_similarity_ratings_long |>
+  select(dyad, idEven, clips, neuralSimCondition, neuralSimConditionSpecific,
+         feltPositiveMinusNegativeEven) |>
+  rename(id = idEven, feltPositiveMinusNegative = feltPositiveMinusNegativeEven)
+
+neural_similarity_ratings_long <- full_join(neural_similarity_ratings_odd,
+                                            neural_similarity_ratings_even)
+
+neural_similarity_data_individual <- full_join(neural_similarity_data,
+                                               neural_similarity_ratings_long) |>
+  select(dyad, id, everything()) |>
+  mutate(id = ifelse(dyad == 4 & is.na(id), 8, 
+                     ifelse(dyad == 5 & is.na(id), 9, 
+                            ifelse(dyad == 9 & is.na(id), 18,
+                                   ifelse(dyad == 10 & is.na(id), 20,
+                                          ifelse(dyad == 19 & is.na(id), 38,
+                                                 ifelse(dyad == 20 & is.na(id), 40,
+                                                        ifelse(dyad == 24 & is.na(id), 47,
+                                                               ifelse(dyad == 27 & is.na(id), 53, id))))))))) |>
+  mutate(id = ifelse(dyad == 33 & is.na(id) & neuralSimConditionSpecific == "odd_self_even_self",
+                     66,
+                     ifelse(dyad == 33 & is.na(id) & 
+                              neuralSimConditionSpecific == "odd_friend_even_friend",
+                     65, id)))
+```
+
+
+# Export
+```{r}
+write.csv(neural_similarity_data_synchrony, "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/data/for_analysis/neural_similarity_data_synchrony_12092023.csv", row.names = FALSE)
+
+write.csv(neural_similarity_data_individual, "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/data/for_analysis/neural_similarity_data_individual_12092023.csv", row.names = FALSE)
+```
+
