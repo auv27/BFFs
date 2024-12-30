@@ -1,0 +1,841 @@
+---
+title: "bffs_neuralsim_analyses_11212024"
+author: "Alicia Vallorani"
+date: "2024-11-21"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, psych, Hmisc, mice, miceadds, lmerTest, broom.mixed, 
+               partR2, sjPlot, viridis, patchwork)
+
+source("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/check_singularity.R")
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/visualization_tools/basic_theme.R")
+theme_set(basic_theme)
+
+project_path <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity" 
+
+# QST data
+qst_df <- read.csv(file.path(project_path,
+                             "/data/for_analysis/bffs_questionnaires_01192024.csv", 
+                             fsep = ""), stringsAsFactors = TRUE) |>
+  # Adjust reported ethnicity
+  mutate(ethnicity = recode(ethnicity, `Another ethnicity` = "Another ethnicity", 
+                            `Hispanic/Latino/Latina/Latinx` = "Hispanic/Latino/Latina/Latinx", 
+                            `Hispanic/Latino/Latina/Latinx, Non-Hispanic` =
+                              "Hispanic/Latino/Latina/Latinx", 
+                            `Non-Hispanic` = "Non-Hispanic", 
+                            `Non-Hispanic, Unknown` = "Non-Hispanic",
+                            `Unknown` = "Unknown"))
+
+# Neural sim synchrony data
+synchrony_df <- read.csv(file.path(project_path,
+                             "/data/for_analysis/neural_similarity_ratings_allregions_data_11212024.csv", 
+                             fsep = ""), stringsAsFactors = FALSE) |>
+   mutate(neuralSimConditionCodes = as.factor(recode(neuralSimCondition,
+                                                    "classic" = 0,
+                                                    "self_perspective" = 1,
+                                                    "friend_perspective" = 2)),
+          atlasNameCodes = as.factor(recode(atlasName, "dmPFC" = 0, "vmPFC" = 1,
+                                                       "rTPJ" = 2, "lTPJ" = 3))) |>
+  # Disambigulate within and between variance
+  group_by(dyad) |>
+  mutate(traitRatings = mean(ratingsSim, na.rm = TRUE),
+         stateRatings = ratingsSim - traitRatings) |>
+  ungroup() |>
+  left_join(qst_df) |>
+  mutate(saTotalC = as.numeric(scale(saTotal, center = TRUE, scale = FALSE))) |>
+  select(dyad, id, saTotal, saTotalC, atlasName, atlasNameCodes, clip, ratingsSim, 
+         traitRatings, stateRatings, neuralSimCondition, neuralSimConditionCodes, 
+         deconMeanCor, siOverallVisit1, siOverallVisit2, raRespondentAffection, 
+         uncomfortableWatchingSelf) |>
+  filter(!is.na(deconMeanCor))
+
+
+# included ids
+included_ids <- synchrony_df |> select(id) |> unique() |> left_join(qst_df)
+```
+
+
+# BFFs Neural Similarity Analyses
+
+## Demographics full sample
+```{r}
+# Handedness
+## 1 = Left; 2 = Right
+qst_df |>
+  group_by(handedness) |>
+  summarise(n())
+
+# Race
+## 1 = Another race; 2 = Asian; 3 = Black; 4 = White; 5 = Mixed 
+qst_df |>
+  group_by(race) |>
+  summarise(n())
+
+# Ethnicity
+## 1 = Another ethnicity; 2 = Hispanic/Latino/Latina/Latinx; 3 = Non-Hispanic; 
+## 4 = Unknown
+qst_df |>
+  group_by(ethnicity) |>
+  summarise(n())
+
+# Sex Assigned
+## 1 = Assigned female; 2 = Assigned male
+qst_df |>
+  group_by(sexAssigned) |>
+  summarise(n())
+
+# Gender Identity
+## 1 = Man; 2 = Woman; 3 = Chose not to identify
+qst_df |>
+  group_by(genderIdentity) |>
+  summarise(n())
+
+# Sexual Identity
+## 1 = Another identity; 2 = Bisexual; 3 = Heterosexual; 4 = Lesbian/Gay; 
+## 5 = Chose not to identify
+qst_df |>
+  group_by(sexualIdentity) |>
+  summarise(n())
+```
+
+
+## Demographics partial sample
+```{r}
+# Handedness
+## 1 = Left; 2 = Right
+included_ids |>
+  group_by(handedness) |>
+  summarise(n())
+
+# Race
+## 1 = Another race; 2 = Asian; 3 = Black; 4 = White; 5 = Mixed 
+included_ids |>
+  group_by(race) |>
+  summarise(n())
+
+# Ethnicity
+## 1 = Another ethnicity; 2 = Hispanic/Latino/Latina/Latinx; 3 = Non-Hispanic; 
+## 4 = Unknown
+included_ids |>
+  group_by(ethnicity) |>
+  summarise(n())
+
+# Sex Assigned
+## 1 = Assigned female; 2 = Assigned male
+included_ids |>
+  group_by(sexAssigned) |>
+  summarise(n())
+
+# Gender Identity
+## 1 = Man; 2 = Woman; 3 = Chose not to identify
+included_ids |>
+  group_by(genderIdentity) |>
+  summarise(n())
+
+# Sexual Identity
+## 1 = Another identity; 2 = Bisexual; 3 = Heterosexual; 4 = Lesbian/Gay; 
+## 5 = Chose not to identify
+included_ids |>
+  group_by(sexualIdentity) |>
+  summarise(n())
+```
+
+
+## Sample description
+```{r}
+# Full sample
+psych::describe(qst_df |> select(ageVisit1, ageVisit2, weeksBetweenVisits,
+                                 romAttract, sexAttract))
+
+# Partial sample
+psych::describe(included_ids |> select(ageVisit1, ageVisit2, weeksBetweenVisits,
+                                       romAttract, sexAttract))
+
+# Social anxiety distribution
+psych::describe(included_ids$saTotal)
+
+dist <- ggplot(included_ids, aes(saTotal)) +
+  geom_histogram()
+```
+
+
+## Descriptives and correlations for between subjects measures
+```{r}
+# Describe
+psych::describe(included_ids |> select(saTotal, siOverallVisit1, siOverallVisit2,
+                                       raRespondentAffection, 
+                                       uncomfortableWatchingSelf))
+
+# Correlate 
+rcorr(as.matrix(included_ids |> select(saTotal, siOverallVisit1, siOverallVisit2,
+                                       raRespondentAffection, 
+                                       uncomfortableWatchingSelf), 
+                type = "pearson"))
+
+# Distribution of Social Anxiety Scores
+dist <- ggplot(included_ids, aes(saTotal)) +
+  geom_dotplot(binwidth = 8, dotsize = .9) +
+  scale_x_continuous(breaks=seq(10, 90, 10), limits=c(10, 90)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  geom_vline(xintercept = 60) +
+  labs(x = "Social Anxiety Symptoms")
+
+ggsave("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/output/figures/dist.png", plot = dist, 
+       width = 10, height = 6)
+```
+
+
+## Multiple imputation
+```{r}
+# All data
+imputed_df <- mice(synchrony_df, m = 25, maxit = 50, method = 'pmm', 
+                   seed = 500, print = FALSE)
+
+# Split imputed data for region analyses
+imputed_datasets <- lapply(1:25, function(i) complete(imputed_df, i))
+
+split_datasets <- lapply(imputed_datasets, function(df) {
+  split(df, df$atlasName) 
+})
+
+combine_splits <- function(group_name) {
+  lapply(split_datasets, function(group_list) group_list[[group_name]])
+}
+
+dmPFC_data <- combine_splits("dmPFC")
+vmPFC_data <- combine_splits("vmPFC")
+rTPJ_data <- combine_splits("rTPJ")
+lTPJ_data <- combine_splits("lTPJ")
+
+
+# dmPFC & rTPJ
+dmPFC_rTPJ_data <- lapply(imputed_datasets, function(df) {
+  df[df$atlasName %in% c("dmPFC", "rTPJ"), ] 
+})
+
+# vmPFC & lTPJ
+vmPFC_lTPJ_data <- lapply(imputed_datasets, function(df) {
+  df[df$atlasName %in% c("vmPFC", "lTPJ"), ] 
+})
+
+# dmPFC, vmPFD and rTPJ
+dmPFC_vmPFC_rTPJ_data <- lapply(imputed_datasets, function(df) {
+  df[df$atlasName %in% c("dmPFC", "vmPFC", "rTPJ"), ] 
+})
+```
+
+
+## Multilevel models
+### Affective similarity and social anxiety
+```{r}
+options(digits = 5, scipen = 999)
+# listwise deleted
+mlm1s <- with(synchrony_df, lmer(deconMeanCor ~
+                                 traitRatings + atlasNameCodes +
+                                 stateRatings*neuralSimConditionCodes*saTotalC +
+                                 (stateRatings|dyad)))
+
+summary(mlm1s)
+
+# imputed
+mlm1i <- with(imputed_df, lmer(deconMeanCor ~
+                               traitRatings + atlasNameCodes +
+                               stateRatings*neuralSimConditionCodes*saTotalC +
+                               (1|dyad)))
+
+summary(pool(mlm1i)) |> mutate(across(where(is.numeric), ~ round(., 3))) 
+
+mlm1i_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                traitRatings + atlasNameCodes +
+                stateRatings*neuralSimConditionCodes*saTotalC +
+                (stateRatings|dyad),
+                data = imputed_datasets[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(mlm1i_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+
+# with control variables
+mlm1ic <- with(imputed_df, lmer(deconMeanCor ~
+                                uncomfortableWatchingSelf +
+                                siOverallVisit1 +
+                                siOverallVisit2 +
+                                raRespondentAffection +
+                                traitRatings + atlasNameCodes +
+                                stateRatings*neuralSimConditionCodes*saTotalC +
+                                (1|dyad)))
+
+summary(pool(mlm1ic)) |> mutate(across(where(is.numeric), ~ round(., 3))) 
+
+mlm1ic_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                uncomfortableWatchingSelf +
+                siOverallVisit1 +
+                siOverallVisit2 +
+                raRespondentAffection +
+                traitRatings + atlasNameCodes +
+                stateRatings*neuralSimConditionCodes*saTotalC +
+                (stateRatings|dyad),
+                data = imputed_datasets[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(mlm1ic_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+```
+
+
+### Affective similarity without social anxiety
+```{r}
+mlm2i <- with(imputed_df, lmer(deconMeanCor ~
+                               traitRatings + atlasNameCodes +
+                               stateRatings*neuralSimConditionCodes +
+                               (1|dyad)))
+
+summary(pool(mlm2i)) |> mutate(across(where(is.numeric), ~ round(., 3))) 
+
+mlm2i_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                traitRatings + atlasNameCodes +
+                stateRatings*neuralSimConditionCodes +
+                (stateRatings|dyad),
+                data = imputed_datasets[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(mlm2i_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+```
+
+
+### Mentalizing region and perspective
+```{r}
+mlm3i <- with(imputed_df, lmer(deconMeanCor ~
+                               atlasNameCodes*neuralSimConditionCodes +
+                               (1|dyad)))
+
+summary(pool(mlm3i)) |> mutate(across(where(is.numeric), ~ round(., 3))) 
+
+mlm3i_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                atlasNameCodes*neuralSimConditionCodes +
+                (1|dyad),
+                data = imputed_datasets[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(mlm1i_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+```
+
+
+#### Plot interactions
+```{r}
+# Interaction between shared affect and perspective
+int1 <- plot_model(mlm1s, type = "pred", 
+           terms = c("stateRatings", "neuralSimConditionCodes")) +
+  ggtitle("") + 
+  labs(y = "Neural Similarity",
+       x = "Affective Similarity",
+       color = "Condition") +
+  scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE)
+
+ggsave("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/output/figures/int1.png", plot = int1, 
+       width = 10, height = 6) 
+
+
+# Interaction between shared affect, perspective and social anxiety symptoms
+int2 <- plot_model(mlm1s, type = "pred", 
+           terms = c("stateRatings", "neuralSimConditionCodes", "saTotalC")) +
+  ggtitle("") + 
+  labs(y = "Neural Similarity",
+       x = "Affective Similarity",
+       color = "Condition") +
+  scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE)
+
+# Average social anxiety 48.85
+int2$data$facet <- ifelse(int2$data$facet == "saTotalC = -18.41", 
+                          "Social Anxiety = 30.44",
+                          ifelse(int2$data$facet == "saTotalC = 1.24",
+                                 "Social Anxiety = 50.09",
+                                 ifelse(int2$data$facet == "saTotalC = 20.89",
+                                        "Social Anxiety = 69.74", NA)))
+
+ggsave("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/output/figures/int2.png", plot = int2, 
+       width = 10, height = 6)
+```
+
+
+### Test by region
+#### listwise deleted
+```{r}
+# dmPFC
+dmpfc <- synchrony_df |> filter(atlasName == "dmPFC")
+dmpfc_model <- with(dmpfc, lmer(deconMeanCor ~ traitRatings +
+                                stateRatings*neuralSimConditionCodes*saTotalC +
+                                (1|dyad)))
+
+summary(dmpfc_model)
+
+# vmPFC
+vmpfc <- synchrony_df |> filter(atlasName == "vmPFC")
+vmpfc_model <- with(vmpfc, lmer(deconMeanCor ~ traitRatings +
+                                stateRatings*neuralSimConditionCodes*saTotalC +
+                                (1|dyad)))
+
+summary(vmpfc_model)
+
+# rTPJ - result possibly driven by rTPJ
+rtpj <- synchrony_df |> filter(atlasName == "rTPJ")
+rtpj_model <- with(rtpj, lmer(deconMeanCor ~ traitRatings +
+                              stateRatings*neuralSimConditionCodes*saTotalC +
+                              (1|dyad)))
+
+summary(rtpj_model)
+
+# lTPJ
+ltpj <- synchrony_df |> filter(atlasName == "lTPJ")
+ltpj_model <- with(ltpj, lmer(deconMeanCor ~ traitRatings +
+                              stateRatings*neuralSimConditionCodes*saTotalC +
+                              (1|dyad)))
+
+summary(ltpj_model)
+```
+
+
+#### Without social anxiety
+dmpfc - stateRatings X neuralSimCondition1
+```{r}
+# dmpfc - stateRatings:neuralSimConditionCodes1	0.036214492	0.017003753	0.04246925
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes +
+                  (1 | dyad),
+                data = dmPFC_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# vmpfc
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes +
+                  (1 | dyad),
+                data = vmPFC_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# rtpj - stateRatings:neuralSimConditionCodes1	0.0331999289	0.017428905	0.07470767
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes +
+                  (1 | dyad),
+                data = rTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# ltpj
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes +
+                  (1 | dyad),
+                data = lTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+```
+
+
+#### With social anxiety
+dmpfc - stateRatings X neuralSimCondition1
+rtpj - neuralSimConditionCodes2 X saTotal
+```{r}
+# dmpfc 
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = dmPFC_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# vmpfc
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = vmPFC_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# rtpj - stateRatings:neuralSimConditionCodes1	0.0331999289	0.017428905	0.07470767
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = rTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# ltpj
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = lTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+```
+
+
+#### Plot region interactions
+```{r}
+# dmPFC
+dmpfc_plot <- plot_model(dmpfc_model, type = "pred", 
+           terms = c("stateRatings", "neuralSimConditionCodes")) +
+  ggtitle("") + 
+  labs(y = "Neural Similarity",
+       x = "Affective Similarity",
+       color = "Condition") +
+  scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE) +
+  ggtitle("A - dmPFC")
+
+# rTPJ
+rtpj_plot <- plot_model(rtpj_model, type = "pred", 
+           terms = c("saTotalC", "neuralSimConditionCodes")) +
+  ggtitle("") + 
+  labs(y = "Neural Similarity",
+       x = "Social Anxiety Symptoms",
+       color = "Condition") +
+  scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE) +
+  ggtitle("B - rTPJ")
+
+regions <- (dmpfc_plot | rtpj_plot) + plot_layout(guides = "collect")
+
+ggsave("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity/output/figures/regions.png", plot = regions, 
+       width = 15, height = 6) 
+```
+
+
+#### Multiple regions
+Effect is strongest when considering only dmPFC and rTPJ
+```{r}
+# dmpfc & rTPJ
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = dmPFC_rTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+
+# vmpfc & lTPJ
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = vmPFC_lTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+
+# dmpfc vmpfc & rtpj
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = dmPFC_vmPFC_rTPJ_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
+
+reduce(model_results, full_join, by = "Term") %>%
+  mutate(
+    Mean_Estimate = rowMeans(select(., starts_with("Estimate")), na.rm = TRUE),
+    Mean_SE = rowMeans(select(., starts_with("SE")), na.rm = TRUE),
+    Mean_t_value = rowMeans(select(., starts_with("t_value")), na.rm = TRUE),
+    Mean_p_value = rowMeans(select(., starts_with("p_value")), na.rm = TRUE)
+  ) %>%
+  select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
+```
+

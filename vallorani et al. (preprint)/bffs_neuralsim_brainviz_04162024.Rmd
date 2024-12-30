@@ -1,0 +1,229 @@
+---
+title: "bffs_neuralsim_brainviz_04162024"
+author: "Alicia Vallorani"
+date: "2024-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, ggbrain, patchwork)
+
+source("~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/alicia_theme.R")
+theme_set(alicia_theme)
+
+homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity"
+```
+
+
+## BRAINS!!
+### Labels
+```{r}
+labels <- read.csv(file.path(homepath, "/data/for_visualization/zstat1_ptfce_mentalizing_converted_clusterized_overlap_0.60.csv")) |>
+  filter(retained == TRUE) |>
+  mutate(label = ifelse(roi_val == 1, "dmPFC",
+                          ifelse(roi_val == 2, "rTPJ", 
+                                 ifelse(roi_val == 4, "lTPJ",
+                                        ifelse(roi_val == 7, "vmPFC", NA))))) |>
+  select(label, roi_val) |>
+  rename(value = roi_val)
+  
+
+labels_list <- as.list(labels)
+```
+
+
+# Overall signal - ptfce .05
+```{r}
+# Figure inputs
+underlay <- file.path(homepath, "/data/for_visualization/template_brain.nii")
+overlay <- file.path(homepath,"/data/for_visualization/zstat1_ptfce_fwep_0.05_1mm.nii.gz")
+clusters <- file.path(homepath,"/data/for_visualization/zstat1_ptfce_mentalizing_converted_clusterized_overlap_0.60_1mm.nii.gz")
+
+# Figure creation
+ptfce_corrected_clusters <- ggbrain() +
+  images(c(underlay = underlay, 
+           overlay = overlay)) +
+  images(c(clusters = clusters),
+         labels = labels) +
+  slices(paste0("x = -.5")) +
+  slices(paste0("z = 24")) +
+  geom_brain(definition = "underlay", 
+             fill_scale = scale_fill_gradient(low = "grey8", high = "grey62"), 
+             show_legend = FALSE) +
+  geom_brain(name = "Signal", 
+             definition = "overlay[overlay > 0]",
+             fill_scale = scale_fill_viridis_c(), 
+             show_legend = TRUE,
+             alpha = .7) +
+  geom_outline(definition = "clusters", 
+               outline = "white",
+               remove_specks = 70,) +
+  annotate_coordinates(hjust = 1, color = "white") +
+  render() + 
+  plot_layout(guides = "collect")
+
+# Export plot
+clusters_plot_path <- file.path(homepath,"/output/figures/ptfce_corrected_clusters.png", fsep = "")
+
+ggsave(clusters_plot_path, plot = ptfce_corrected_clusters, dpi = 300)
+```
+
+
+## Timeseries figures for poster
+```{r}
+# Figure inputs
+oself_efriend <- read.csv(file.path(homepath,
+                          "/data/for_visualization/cns_oself_efriend_04182024.csv"))
+
+eself_ofriend <- read.csv(file.path(homepath,
+                          "/data/for_visualization/cns_eself_ofriend_04182024.csv"))
+
+oself_eself <- read.csv(file.path(homepath,
+                        "/data/for_visualization/cns_oself_eself_04182024.csv"))
+
+efriend_ofriend <- read.csv(file.path(homepath,
+                            "/data/for_visualization/cns_efriend_ofriend_04182024.csv"))
+
+# oself & efriend
+plot_oself_efriend_32 <- oself_efriend |>
+  filter(dyad == "32")
+
+plot_oself_efriend_63 <- plot_oself_efriend_32 |>
+  filter(id == 63) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean63 = deconMean) 
+
+plot_oself_efriend_64 <- plot_oself_efriend_32 |>
+  filter(id == 64) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean64 = deconMean) 
+
+plot_oself_efriend_df <- full_join(plot_oself_efriend_63, plot_oself_efriend_64)
+
+plot_oself_efriend <- ggplot(plot_oself_efriend_df, aes(x = time)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  geom_line(aes(y = deconMean63, color = "deconMean63"), size = .5) +
+  geom_line(aes(y = deconMean64, color = "deconMean64"), size = .5) +
+  scale_color_manual(values = c("#E41934", "#FDB040"),
+                     labels = c("Participant a - own perspective", 
+                                "Participant b - friend's perspective")) +
+  facet_grid(trial~atlasName) +
+  labs(title = "Same-Stimuli",
+       x = "Deconvolution Time",
+       y = "Deconvolution Value",
+       color = "Participant") +
+  theme(plot.title = element_text(color = "#297181"))
+
+# eself & ofriend
+plot_eself_ofriend_32 <- eself_ofriend |>
+  filter(dyad == "32") 
+
+plot_eself_ofriend_63 <- plot_eself_ofriend_32 |>
+  filter(id == 63) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean63 = deconMean) 
+
+plot_eself_ofriend_64 <- plot_eself_ofriend_32 |>
+  filter(id == 64) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean64 = deconMean) 
+
+plot_eself_ofriend_df <- full_join(plot_eself_ofriend_63, plot_eself_ofriend_64)
+
+plot_eself_ofriend <- ggplot(plot_eself_ofriend_df, aes(x = time)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  geom_line(aes(y = deconMean63, color = "deconMean63"), size = .5) +
+  geom_line(aes(y = deconMean64, color = "deconMean64"), size = .5) +
+  scale_color_manual(values = c("#E41934", "#FDB040"),
+                     labels = c("Participant a - friend's perspective", 
+                                "Participant b - own perspective")) +
+  facet_grid(trial~atlasName) +
+  labs(title = "Same-Stimuli",
+       x = "Deconvolution Time",
+       y = "Deconvolution Value",
+       color = "Participant") +
+  theme(plot.title = element_text(color = "#297181"))
+
+# oself & eself
+plot_oself_eself_32 <- oself_eself |>
+  filter(dyad == "32") 
+
+plot_oself_eself_63 <- plot_oself_eself_32 |>
+  filter(id == 63) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean63 = deconMean) 
+
+plot_oself_eself_64 <- plot_oself_eself_32 |>
+  filter(id == 64) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean64 = deconMean) 
+
+plot_oself_eself_df <- full_join(plot_oself_eself_63, plot_oself_eself_64)
+
+plot_oself_eself <- ggplot(plot_oself_eself_df, aes(x = time)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  geom_line(aes(y = deconMean63, color = "deconMean63"), size = .5) +
+  geom_line(aes(y = deconMean64, color = "deconMean64"), size = .5) +
+  scale_color_manual(values = c("#E41934", "#FDB040"),
+                     labels = c("Participant a - own perspective", 
+                                "Participant b - own perspective")) +
+  facet_grid(trial~atlasName) +
+  labs(title = "Self-Perspective",
+       x = "Deconvolution Time",
+       y = "Deconvolution Value",
+       color = "Participant") +
+  theme(plot.title = element_text(color = "#40054D"))
+
+# efriend & ofriend
+plot_efriend_ofriend_32 <- efriend_ofriend |>
+  filter(dyad == "32") 
+
+plot_efriend_ofriend_63 <- plot_efriend_ofriend_32 |>
+  filter(id == 63) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean63 = deconMean) 
+
+plot_efriend_ofriend_64 <- plot_efriend_ofriend_32 |>
+  filter(id == 64) |>
+  select(atlasName, trial, deconMean, time) |>
+  rename(deconMean64 = deconMean) 
+
+plot_efriend_ofriend_df <- full_join(plot_efriend_ofriend_63, 
+                                     plot_efriend_ofriend_64)
+
+plot_efriend_ofriend <- ggplot(plot_efriend_ofriend_df, aes(x = time)) +
+  scale_y_continuous(breaks = c(0, 1)) +
+  geom_line(aes(y = deconMean63, color = "deconMean63"), size = .5) +
+  geom_line(aes(y = deconMean64, color = "deconMean64"), size = .5) +
+  scale_color_manual(values = c("#E41934", "#FDB040"),
+                     labels = c("Participant a - friend's perspective", 
+                                "Participant b - friend's perspective")) +
+  facet_grid(trial~atlasName) +
+  labs(title = "Friend-Perspective",
+       x = "Deconvolution Time",
+       y = "Deconvolution Value",
+       color = "Participant") +
+  theme(plot.title = element_text(color = "#82BF40"))
+
+# Export plots
+## oself & efriend
+ggsave(file.path(homepath,"/output/figures/plot_oself_efriend.png", fsep = ""), 
+       plot = plot_oself_efriend, height = 11, width = 8, dpi = 300)
+
+## eself & ofriend
+ggsave(file.path(homepath,"/output/figures/plot_eself_ofriend.png", fsep = ""), 
+       plot = plot_eself_ofriend, height = 11, width = 8, dpi = 300)
+
+## oself & eself
+ggsave(file.path(homepath,"/output/figures/plot_oself_eself.png", fsep = ""), 
+       plot = plot_oself_eself, height = 11, width = 8, dpi = 300)
+
+## efriend & ofriend
+ggsave(file.path(homepath,"/output/figures/plot_efriend_ofriend.png", fsep = ""), 
+       plot = plot_efriend_ofriend, height = 11, width = 8, dpi = 300)
+```
