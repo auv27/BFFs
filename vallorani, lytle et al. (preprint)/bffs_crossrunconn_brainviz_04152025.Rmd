@@ -1,0 +1,80 @@
+---
+title: "bffs_crossrun_brainviz_04152025"
+author: "Alicia Vallorani"
+date: "2025-04-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, ggbrain, patchwork)
+
+source("~/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/alicia_theme.R")
+theme_set(alicia_theme)
+
+homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses"
+```
+
+
+## BRAINS!!
+### Labels
+```{r}
+labels <- read.csv(file.path(homepath, "neural_similarity/data/for_visualization/zstat1_ptfce_mentalizing_converted_clusterized_overlap_0.60.csv")) |>
+  filter(retained == TRUE) |>
+  mutate(label = ifelse(roi_val == 1, "dmPFC",
+                          ifelse(roi_val == 2, "rTPJ", 
+                                 ifelse(roi_val == 4, "lTPJ",
+                                        ifelse(roi_val == 7, "vmPFC", NA))))) |>
+  select(label, roi_val) |>
+  rename(value = roi_val)
+  
+
+labels_list <- as.list(labels)
+```
+
+
+# Overall signal - ptfce .05
+```{r}
+# Figure inputs
+underlay <- file.path(homepath, "/neural_similarity/data/for_visualization/template_brain.nii")
+overlay <- file.path(homepath,"/neural_similarity/data/for_visualization/zstat1_ptfce_fwep_0.05_1mm.nii.gz")
+clusters <- file.path(homepath,"/neural_similarity/data/for_visualization/zstat1_ptfce_mentalizing_converted_clusterized_overlap_0.60_1mm.nii.gz")
+
+# Figure creation
+ptfce_corrected_clusters <- ggbrain() +
+  images(c(underlay = underlay, 
+           overlay = overlay)) +
+  images(c(clusters = clusters)) +
+  slices(paste0("x = -.5")) +
+  #slices(paste0("x = 20")) +
+  slices(paste0("z = 24")) +
+  slices(paste0("y = 53")) +
+  geom_brain(definition = "underlay", 
+             fill_scale = scale_fill_gradient(low = "grey8", high = "grey62"), 
+             show_legend = FALSE) +
+  geom_brain(name = "Signal", 
+             definition = "overlay[overlay > 0]",
+             fill_scale = scale_fill_viridis_c(), 
+             show_legend = TRUE,
+             alpha = .7) +
+  geom_outline(definition = "clusters", 
+               outline = "white",
+               remove_specks = 70,) +
+  annotate_coordinates(hjust = 1, color = "white") +
+  render() + 
+  plot_layout(guides = "collect")
+
+ptfce_corrected_clusters
+
+# Export plot
+clusters_plot_path <- file.path(homepath,"/cross_run_connectivity/output/ptfce_corrected_clusters.png", fsep = "")
+
+ggsave(clusters_plot_path, plot = ptfce_corrected_clusters, dpi = 300, 
+       height = 3, width = 7)
+```
+
+

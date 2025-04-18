@@ -1,0 +1,88 @@
+---
+title: "bffs_neuralsim_equation_02012024"
+author: "Alicia Vallorani"
+date: "2024-02-01"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, lmerTest, broom.mixed, equatiomatic)
+
+source("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/check_singularity.R")
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/visualization_tools/basic_theme.R")
+theme_set(basic_theme)
+
+project_path <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/neural_similarity" 
+
+# QST data
+qst_df <- read.csv(file.path(project_path,
+                             "/data/for_analysis/bffs_questionnaires_01192024.csv", 
+                             fsep = ""), stringsAsFactors = TRUE) |>
+  # Adjust reported ethnicity
+  mutate(ethnicity = recode(ethnicity, `Another ethnicity` = "Another ethnicity", 
+                            `Hispanic/Latino/Latina/Latinx` = "Hispanic/Latino/Latina/Latinx", 
+                            `Hispanic/Latino/Latina/Latinx, Non-Hispanic` =
+                              "Hispanic/Latino/Latina/Latinx", 
+                            `Non-Hispanic` = "Non-Hispanic", 
+                            `Non-Hispanic, Unknown` = "Non-Hispanic",
+                            `Unknown` = "Unknown"))
+
+# Neural sim synchrony data
+synchrony_df <- read.csv(file.path(project_path,
+                             "/data/for_analysis/neural_similarity_data_synchrony_12092023.csv", 
+                             fsep = ""), stringsAsFactors = FALSE) 
+
+synchrony_df <- full_join(synchrony_df, qst_df) |>
+  # Recode data
+  mutate(neuralSimConditionAnalysis = ifelse(id %% 2 != 0 & neuralSimConditionSpecific == "odd_self_even_friend", "selfClassic", ifelse(id %% 2 == 0 & neuralSimConditionSpecific == "odd_self_even_friend", "friendClassic", ifelse(id %% 2 != 0 & neuralSimConditionSpecific == "even_self_odd_friend", "friendClassic", ifelse(id %% 2 == 0 & neuralSimConditionSpecific == "even_self_odd_friend", "selfClassic", ifelse(neuralSimConditionSpecific == "odd_self_even_self", "selfPerspective", ifelse(neuralSimConditionSpecific == "odd_friend_even_friend", "friendPerspective", NA)))))),
+         neuralSimConditionCodes = as.factor(recode(neuralSimConditionAnalysis,
+                                                    `selfClassic` = 0, 
+                                                    `friendClassic` = 1,
+                                                    `selfPerspective` = 2,
+                                                    `friendPerspective` = 3)),
+         atlasNameCodes = as.factor(recode(atlasName, `dmPFC` = 0, `vmPFC` = 1,
+                                           `rTPJ` = 2, `lTPJ` = 3))) |>
+  # Disambigulate within and between variance
+  group_by(dyad) |>
+  mutate(traitRatings = mean(ratingSynchrony, na.rm = TRUE),
+         stateRatings = ratingSynchrony - traitRatings) |>
+  ungroup() |>
+  mutate_all(~ifelse(is.nan(.), NA, .)) |>
+  select(dyad, id, saTotal, atlasName, atlasNameCodes, clips, ratingSynchrony, 
+         traitRatings, stateRatings, neuralSimCondition, neuralSimConditionAnalysis, 
+         neuralSimConditionCodes, neuralSimIntraClassCorrelation,
+         siOverallVisit1, siOverallVisit2, raRespondentAffection, 
+         uncomfortableWatchingSelf) |>
+  mutate(neuralSimConditionCodes = as.factor(neuralSimConditionCodes),
+        atlasNameCodes = as.factor(atlasNameCodes))
+
+synchrony_df_na <- synchrony_df |> filter(!is.na(neuralSimIntraClassCorrelation)) |>
+   mutate(stateRatingsC = as.numeric(scale(stateRatings, center = TRUE, scale = FALSE)),
+          saTotalC = as.numeric(scale(saTotal, center = TRUE, scale = FALSE)))
+
+included_ids <- synchrony_df_na |>
+  select(dyad, id) |>
+  unique() |>
+  left_join(qst_df)
+```
+
+# Extract equation
+```{r}
+mlm2e <- with(synchrony_df_na, lmer(neuralSimIntraClassCorrelation ~
+                                    uncomfortableWatchingSelf +
+                                    siOverallVisit1 +
+                                    siOverallVisit2 +
+                                    raRespondentAffection +
+                                    traitRatings + atlasNameCodes +
+                                    stateRatingsC*neuralSimConditionCodes*saTotalC +
+                                    (stateRatingsC|dyad)))
+
+extract_eq(mlm2e, wrap = TRUE, terms_per_line = 1, operator_location = "start")
+```

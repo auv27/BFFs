@@ -1,0 +1,419 @@
+---
+title: "bffs_crossrunconn_01172025"
+author: "Alicia Vallorani"
+date: "2025-01-17"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!("pacman" %in% installed.packages()[,])) {
+    install.packages("pacman")
+  }
+pacman::p_load(tidyverse, Hmisc, psych, lmerTest, sjPlot, officer, flextable,
+               viridis, equatiomatic)
+
+homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/cross_run_connectivity" 
+
+source("/Users/aliciavallorani/Library/CloudStorage/Box-Box/Standard Codes/visualization_tools/basic_theme.R")
+theme_set(basic_theme)
+
+source("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/check_singularity.R")
+```
+
+# Data
+```{r}
+df_qst <- read.csv(file.path(homepath,
+                             "/for_analysis/bffs_questionnaires_01192024.csv",
+                             fsep = "")) |>
+  select(dyad, id, ageVisit1, ageVisit2, weeksBetweenVisits, handedness, race, 
+         ethnicity, sexAssigned, 
+         genderIdentity, sexualIdentity, romAttract, sexAttract, siOverallVisit1, 
+         siOverallVisit2, raRespondentAffection, uncomfortableWatchingSelf,
+         saTotal) |>
+  mutate(saTotalC = as.numeric(scale(saTotal, center = TRUE, scale = FALSE)))
+
+df_dyadic_affect <- read.csv(file.path(homepath, 
+                             "/for_analysis/bffs_crossrunconn_dyadicaffect_01172025.csv",
+                             fsep = "")) |>
+  full_join(df_qst) |>
+  arrange(dyad, id, trial) |>
+  # Filter dyads that didn't do bffs task
+  filter(!dyad %in% c(1, 6, 18, 28, 31, 36)) |>
+  # Filter ids missing both runs
+  filter(!id %in% c(8, 18, 20, 30, 31, 38, 40, 47, 53)) |>
+  # Filter ids missing either run
+  filter(!id %in% c(9, 65, 66)) |>
+  group_by(id) |>
+  mutate(positiveBetween = mean(expressedPositiveProportion),
+         positiveWithin = expressedPositiveProportion - positiveBetween,
+         negativeBetween = mean(expressedNegativeProportion),
+         negativeWithin = expressedNegativeProportion - negativeBetween,
+         connectivitySelfBetween = mean(mentalizingConnectivitySelf),
+         connectivitySelfWithin = mentalizingConnectivitySelf - connectivitySelfBetween) |>
+  ungroup()
+
+df_indi_affect <- read.csv(file.path(homepath, 
+                             "/for_analysis/bffs_crossrunconn_individualaffect_01172025.csv",
+                             fsep = "")) |>
+  full_join(df_qst) |>
+  arrange(dyad, id) |>
+  # Filter dyads that didn't do bffs task
+  filter(!dyad %in% c(1, 6, 18, 28, 31, 36)) |>
+  # Filter ids missing both runs
+  filter(!id %in% c(8, 18, 20, 30, 31, 38, 40, 47, 53)) |>
+  # Filter ids missing either run
+  filter(!id %in% c(9, 65, 66)) |>
+  group_by(id) |>
+  mutate(positiveSelfBetween = mean(expressedPositiveProportion),
+         positiveSelfWithin = expressedPositiveProportion - positiveSelfBetween,
+         negativeSelfBetween = mean(expressedNegativeProportion),
+         negativeSelfWithin = expressedNegativeProportion - negativeSelfBetween,
+         positiveFriendBetween = mean(expressedPositiveProportionFriend),
+         positiveFriendWithin = expressedPositiveProportionFriend - positiveFriendBetween,
+         negativeFriendBetween = mean(expressedNegativeProportionFriend),
+         negativeFriendWithin = expressedNegativeProportionFriend - negativeFriendBetween,
+         connectivitySelfBetween = mean(mentalizingConnectivitySelf),
+         connectivitySelfWithin = mentalizingConnectivitySelf - connectivitySelfBetween) |>
+  ungroup()
+
+df_qst_sample <- df_dyadic_affect |>
+  select(dyad, id, ageVisit1, ageVisit2, weeksBetweenVisits, handedness, race, 
+         ethnicity, sexAssigned, 
+         genderIdentity, sexualIdentity, romAttract, sexAttract, siOverallVisit1, 
+         siOverallVisit2, raRespondentAffection, uncomfortableWatchingSelf,
+         saTotal) |>
+  unique()
+```
+
+
+# Demographics full sample
+```{r}
+# Race
+df_qst |>
+  group_by(race) |>
+  summarise(n())
+
+# Ethnicity
+df_qst |>
+  group_by(ethnicity) |>
+  summarise(n())
+
+# Sex Assigned
+df_qst |>
+  group_by(sexAssigned) |>
+  summarise(n())
+
+# Gender Identity
+df_qst |>
+  group_by(genderIdentity) |>
+  summarise(n())
+
+# Sexual Identity
+df_qst |>
+  group_by(sexualIdentity) |>
+  summarise(n())
+```
+
+
+# Demographics partial sample
+```{r}
+# Race
+df_qst_sample |>
+  group_by(race) |>
+  summarise(n())
+
+# Ethnicity
+df_qst_sample |>
+  group_by(ethnicity) |>
+  summarise(n())
+
+# Sex Assigned
+df_qst_sample |>
+  group_by(sexAssigned) |>
+  summarise(n())
+
+# Gender Identity
+df_qst_sample |>
+  group_by(genderIdentity) |>
+  summarise(n())
+
+# Sexual Identity
+df_qst_sample |>
+  group_by(sexualIdentity) |>
+  summarise(n())
+
+# Sexual Identity
+df_qst_sample |>
+  group_by(handedness) |>
+  summarise(n())
+```
+
+
+# Sample description
+```{r}
+# Full sample
+psych::describe(df_qst |> select(ageVisit1, ageVisit2, weeksBetweenVisits, 
+                                 romAttract, sexAttract))
+
+# Partial sample
+psych::describe(df_qst_sample |> select(ageVisit1, ageVisit2, weeksBetweenVisits,
+                                        romAttract, sexAttract))
+```
+
+
+## Descriptives and correlations for between subjects measures
+```{r}
+# Describe
+psych::describe(df_qst_sample |> select(saTotal, siOverallVisit1, siOverallVisit2,
+                                  raRespondentAffection, uncomfortableWatchingSelf))
+
+# Correlate 
+rcorr(as.matrix(df_qst_sample |> select(saTotal, siOverallVisit1, siOverallVisit2,
+                                  raRespondentAffection, uncomfortableWatchingSelf), 
+                type = "pearson"))
+
+# Distribution of Social Anxiety Scores
+dist <- ggplot(df_qst_sample, aes(saTotal)) +
+  geom_dotplot(binwidth = 8, dotsize = .9) +
+  scale_x_continuous(breaks=seq(0, 100, 10), limits=c(0, 100)) +
+  scale_y_continuous(NULL, breaks = NULL) +
+  geom_vline(xintercept = 60) +
+  labs(x = "Social Anxiety Symptoms")
+
+dist
+
+ggsave(file.path(homepath, "/output/sanxiety.png"), dist, height = 4, 
+       width = 6, dpi = 300)
+```
+
+# Did dyadic affect impact connectivity across runs?
+## Model
+mlm1.3 best because not singular. Effect remains (even grows stronger) with
+control variables included
+```{r}
+mlm1.1 <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin + positiveWithin + negativeWithin|dyad/id)))
+check_singularity(mlm1.1)
+summary(mlm1.1)
+
+mlm1.2 <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin |dyad/id)))
+check_singularity(mlm1.2)
+summary(mlm1.2)
+
+mlm1.3 <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin |id)))
+summary(mlm1.3)
+tab_model(mlm1.3, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+
+mlm1.3.c <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                                          uncomfortableWatchingSelf +
+                                          siOverallVisit1 +
+                                          siOverallVisit2 +
+                                          raRespondentAffection +
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin |id)))
+
+summary(mlm1.3.c)
+tab_model(mlm1.3.c, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+```
+
+
+## Plot interaction
+On trials where the proportion of expressed negative affect was >= .321 higher 
+than average, higher mentalizing network connectivity during the Self Run was
+associated with lower mentalizing network connectivity during the Friend Run.
+```{r}
+plot_mlm1.3 <- plot_model(mlm1.3, type = "pred", 
+           terms = c("connectivitySelfWithin", "negativeWithin")) +
+  ggtitle("") + 
+  labs(y = "Connectivity During Friend Run",
+       x = "Connectivity During Self Run",
+       color = "Total Expressed Negative Affect") +
+  scale_color_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE)
+
+plot_mlm1.3
+
+ggsave(file.path(homepath, "/output/mlm1.3.png"), plot_mlm1.3, dpi = 300)
+
+
+#johnson_neyman(model = mlm1.3, pred = connectivitySelfWithin, modx = negativeWithin)
+```
+
+
+# Was this moderated by social anxiety?
+## Model
+Effects remain with control variables
+```{r}
+mlm2 <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin*saTotalC +
+                                 connectivitySelfWithin*negativeWithin*saTotalC +
+                               (connectivitySelfWithin|id)))
+
+summary(mlm2)
+tab_model(mlm2, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+
+mlm2.c <- with(df_dyadic_affect, lmer(mentalizingConnectivityFriend ~
+                                        uncomfortableWatchingSelf +
+                                          siOverallVisit1 +
+                                          siOverallVisit2 +
+                                          raRespondentAffection +
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin*saTotalC +
+                                 connectivitySelfWithin*negativeWithin*saTotalC +
+                               (connectivitySelfWithin|id)))
+
+summary(mlm2.c)
+tab_model(mlm2.c, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+```
+
+
+## Plot Interaction
+On trials higher in negative affect than average, participants higher in social
+anxiety symptoms exhibited greater mentalizing network connectivity during the
+friend run if they had higher connectivity during the self run. Conversely,
+participants lower in social anxiety symptoms exhibited lower mentalizing
+connectivity during the friend run if they had higher connectivity during the 
+self run.
+```{r}
+# Low is 31.27; medium is 50.1; high is 68.92
+plot_mlm2 <- plot_model(mlm2, type = "pred", 
+           terms = c("connectivitySelfWithin", "negativeWithin", "saTotalC")) +
+  ggtitle("") + 
+  labs(y = "Connectivity During Friend Run",
+       x = "Connectivity During Self Run",
+       color = "Total Expressed Negative Affect") +
+  scale_color_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE)
+
+plot_mlm2$data$facet <- ifelse(plot_mlm2$data$facet == "saTotalC = -18.21", 
+                          "Social Anxiety = 31.27",
+                          ifelse(plot_mlm2$data$facet == "saTotalC = 0.62",
+                                 "Social Anxiety = 50.10",
+                                 ifelse(plot_mlm2$data$facet == "saTotalC = 19.44",
+                                        "Social Anxiety = 68.92", NA)))
+
+plot_mlm2
+
+ggsave(file.path(homepath, "/output/mlm2.png"), plot_mlm2, dpi = 300, 
+       width = 9, height = 5)
+```
+
+
+# Was this specific to your own or friends affect?
+## Model
+Effects consistent but not significant with control variables 
+```{r}
+mlm3 <- with(df_indi_affect, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + negativeSelfBetween +
+                                 negativeFriendBetween + positiveSelfBetween + 
+                                 positiveFriendBetween + 
+                                 connectivitySelfWithin*positiveSelfWithin*saTotalC +
+                                 connectivitySelfWithin*positiveFriendWithin*saTotalC +
+                                 connectivitySelfWithin*negativeSelfWithin*saTotalC +
+                                 connectivitySelfWithin*negativeFriendWithin*saTotalC +
+                               (connectivitySelfWithin|id)))
+
+summary(mlm3)
+tab_model(mlm3, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+
+mlm3.c <- with(df_indi_affect, lmer(mentalizingConnectivityFriend ~
+                                      uncomfortableWatchingSelf +
+                                          siOverallVisit1 +
+                                          siOverallVisit2 +
+                                          raRespondentAffection +
+                               connectivitySelfBetween + negativeSelfBetween +
+                                 negativeFriendBetween + positiveSelfBetween + 
+                                 positiveFriendBetween + 
+                                 connectivitySelfWithin*positiveSelfWithin*saTotalC +
+                                 connectivitySelfWithin*positiveFriendWithin*saTotalC +
+                                 connectivitySelfWithin*negativeSelfWithin*saTotalC +
+                                 connectivitySelfWithin*negativeFriendWithin*saTotalC +
+                               (connectivitySelfWithin|id)))
+
+summary(mlm3.c)
+tab_model(mlm3.c, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+```
+
+
+## Plot
+The effect is potentially driven by the friend's negative affect expressions. 
+Low anxiety individuals had lower mentalizing network connectivity during 
+friend run on trials with higher than average negative affect and higher than 
+average connectivity during self run. That is if their connectivity was high 
+while watching their friend express negative affect, their connectivity was low
+when watching themselves
+
+High anxiety individuals had higher mentalizing connectivity during the friend
+run on trials with higher than average negative affect and higher than average 
+connectivity during self run. That is if their connectivity was high while 
+watching their friend express negative affect, their connectivity was also high
+while watching themselves.
+```{r}
+plot_mlm3 <- plot_model(mlm3, type = "pred", 
+           terms = c("connectivitySelfWithin", "negativeFriendWithin", "saTotalC"))  +
+  ggtitle("") + 
+  labs(y = "Connectivity During Friend Run",
+       x = "Connectivity During Self Run",
+       color = "Friend Expressed Negative Affect") +
+  scale_color_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                     values = c("#287C8E", "#440154", "#8FD744"),
+                     drop = FALSE) +
+  scale_fill_manual(labels = c("-1SD", "Mean", "+1SD"), 
+                    values = c("#287C8E", "#440154", "#8FD744"), 
+                    drop = FALSE)
+
+plot_mlm3$data$facet <- ifelse(plot_mlm3$data$facet == "saTotalC = -18.21", 
+                          "Social Anxiety = 31.27",
+                          ifelse(plot_mlm3$data$facet == "saTotalC = 0.62",
+                                 "Social Anxiety = 50.10",
+                                 ifelse(plot_mlm3$data$facet == "saTotalC = 19.44",
+                                        "Social Anxiety = 68.92", NA)))
+
+plot_mlm3
+
+ggsave(file.path(homepath, "/output/mlm3.png"), plot_mlm3, dpi = 300, 
+       width = 9, height = 5)
+```
+
+
+# Equations for supplemental materials
+```{r}
+extract_eq(mlm1.3, wrap = TRUE, terms_per_line = 1, operator_location = "start")
+
+extract_eq(mlm2, wrap = TRUE, terms_per_line = 1, operator_location = "start")
+
+extract_eq(mlm3, wrap = TRUE, terms_per_line = 1, operator_location = "start")
+```
+
