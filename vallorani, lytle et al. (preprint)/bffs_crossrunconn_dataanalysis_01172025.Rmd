@@ -14,7 +14,7 @@ if (!("pacman" %in% installed.packages()[,])) {
     install.packages("pacman")
   }
 pacman::p_load(tidyverse, Hmisc, psych, lmerTest, sjPlot, officer, flextable,
-               viridis, equatiomatic)
+               viridis, equatiomatic, broom.mixed)
 
 homepath <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/analyses/cross_run_connectivity" 
 
@@ -259,9 +259,6 @@ plot_mlm1.3 <- plot_model(mlm1.3, type = "pred",
 plot_mlm1.3
 
 ggsave(file.path(homepath, "/output/mlm1.3.png"), plot_mlm1.3, dpi = 300)
-
-
-#johnson_neyman(model = mlm1.3, pred = connectivitySelfWithin, modx = negativeWithin)
 ```
 
 
@@ -415,5 +412,300 @@ extract_eq(mlm1.3, wrap = TRUE, terms_per_line = 1, operator_location = "start")
 extract_eq(mlm2, wrap = TRUE, terms_per_line = 1, operator_location = "start")
 
 extract_eq(mlm3, wrap = TRUE, terms_per_line = 1, operator_location = "start")
+```
+
+
+# Requests from reviewers
+## Flip independent and dependent variable
+```{r}
+df_dyadic_affect_flip <- df_dyadic_affect |>
+  mutate(connectivityFriendBetween = mean(mentalizingConnectivityFriend),
+         connectivityFriendWithin = mentalizingConnectivityFriend - connectivityFriendBetween)
+
+r1.1_mlm1 <- with(df_dyadic_affect_flip, lmer(mentalizingConnectivitySelf ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivityFriendWithin*positiveWithin +
+                               connectivityFriendWithin*negativeWithin +
+                               (connectivityFriendWithin |id)))
+summary(r1.1_mlm1)
+
+coefs <- summary(r1.1_mlm1)$coefficients
+coefs_clean <- coefs[, !colnames(coefs) %in% "df"]
+
+round(coefs_clean, 3)
+```
+
+
+## Brain based synchrony (across PA and NA) and social anxiety
+```{r}
+df_collapsed_affect <- df_indi_affect |>
+  select(dyad, id, expressedPositiveProportion, expressedNegativeProportion,
+         expressedPositiveProportionFriend, expressedNegativeProportionFriend,
+         mentalizingConnectivitySelf, mentalizingConnectivityFriend, saTotal) |>
+  group_by(id) |>
+  mutate(expressedPositiveProportionAvg = mean(expressedPositiveProportion, na.rm = TRUE),
+         expressedNegativeProportionAvg = mean(expressedNegativeProportion, na.rm = TRUE), 
+         expressedPositiveProportionFriendAvg = mean(expressedPositiveProportionFriend, na.rm = TRUE),
+         expressedNegativeProportionFriendAvg = mean(expressedNegativeProportionFriend, na.rm = TRUE),
+         mentalizingConnectivitySelfAvg = mean(mentalizingConnectivitySelf, na.rm = TRUE),
+         mentalizingConnectivityFriendAvg = mean(mentalizingConnectivityFriend, na.rm = TRUE),
+         eppac = as.numeric(scale(expressedPositiveProportionAvg, scale = FALSE, center = TRUE)),
+         enpac = as.numeric(scale(expressedNegativeProportionAvg, scale = FALSE, center = TRUE)),
+         eppfac = as.numeric(scale(expressedPositiveProportionFriendAvg, scale = FALSE, center = TRUE)),
+         enpfac = as.numeric(scale(expressedNegativeProportionFriendAvg, scale = FALSE, center = TRUE)),
+         mcsac = as.numeric(scale(mentalizingConnectivitySelfAvg, scale = FALSE, center = TRUE)),
+         mcfac = as.numeric(scale(mentalizingConnectivityFriendAvg, scale = FALSE, center = TRUE))) |>
+  select(dyad, id, eppac, enpac, eppfac, enpfac, mcsac, mcfac, saTotal) |>
+  unique()
+
+r1.2_lm1 <- with(df_collapsed_affect, lm(saTotal ~ eppac*mcsac + enpac*mcfac +
+                                         enpac*mcsac + enpac*mcfac + 
+                                         eppfac*mcsac + eppfac*mcfac +
+                                         enpfac*mcsac + enpfac*mcfac))
+summary(r1.2_lm1)
+```
+
+
+## Johnson-neyman plot for added interpretability
+```{r}
+# Within-person model
+interactions::johnson_neyman(
+  model = mlm1.3,
+  pred  = connectivitySelfWithin,
+  modx  = negativeWithin
+)
+
+# Social anxiety model
+df_low_sa <- df_dyadic_affect |>
+  filter(saTotalC <= -18.21)
+
+df_high_sa <- df_dyadic_affect |>
+  filter(saTotalC >= 19.44)
+
+r1.4_mlm1_low <- with(df_low_sa, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin |id)))
+
+interactions::johnson_neyman(
+  model = r1.4_mlm1_low,
+  pred  = connectivitySelfWithin,
+  modx  = negativeWithin
+)
+
+r1.4_mlm1_high <- with(df_high_sa, lmer(mentalizingConnectivityFriend ~
+                               connectivitySelfBetween + positiveBetween +
+                                 negativeBetween +
+                               connectivitySelfWithin*positiveWithin +
+                               connectivitySelfWithin*negativeWithin +
+                               (connectivitySelfWithin |id)))
+
+interactions::johnson_neyman(
+  model = r1.4_mlm1_high,
+  pred  = connectivitySelfWithin,
+  modx  = negativeWithin
+)
+```
+
+
+## Between runs model
+```{r}
+with(df_dyadic_affect, cor.test(mentalizingConnectivitySelf, mentalizingConnectivityFriend))
+
+df_between_run_dyadic <- df_dyadic_affect |>
+  select(dyad, id, mentalizingConnectivitySelf, mentalizingConnectivityFriend,
+         positiveBetween, positiveWithin, negativeBetween, negativeWithin, saTotalC) |>
+  pivot_longer(3:4, names_to = "run", values_to = "connectivity") |>
+  mutate(run = recode(run, mentalizingConnectivityFriend = 1,
+                      mentalizingConnectivitySelf = 0))
+  
+
+r2.1_mlm1 <- with(df_between_run_dyadic, lmer(connectivity ~ run + positiveBetween +
+                                              negativeBetween + run*positiveWithin*saTotalC +
+                                              run*negativeWithin*saTotalC + (1|id)))
+
+summary(r2.1_mlm1)
+
+coefs <- summary(r2.1_mlm1)$coefficients
+coefs_clean <- coefs[, !colnames(coefs) %in% "df"]
+
+round(coefs_clean, 3)
+tab_model(r2.1_mlm1, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
+
+df_between_run_indi <- df_indi_affect |> 
+  select(dyad, id, mentalizingConnectivitySelf, mentalizingConnectivityFriend,
+         positiveSelfBetween, positiveSelfWithin, negativeSelfBetween,
+         negativeSelfWithin, positiveFriendBetween, positiveFriendWithin,
+         negativeFriendBetween, negativeFriendWithin, saTotalC) |>
+  pivot_longer(3:4, names_to = "run", values_to = "connectivity") |>
+  mutate(run = recode(run, mentalizingConnectivityFriend = 1,
+                      mentalizingConnectivitySelf = 0))
+
+r2.1_mlm2 <- with(df_between_run_indi, lmer(connectivity ~ run + positiveSelfBetween +
+                                      negativeSelfBetween + positiveFriendBetween +
+                                      negativeFriendBetween + run*positiveSelfWithin*saTotalC +
+                                      run*negativeSelfWithin*saTotalC + run*positiveFriendWithin*saTotalC +
+                                      run*negativeFriendWithin*saTotalC + (1|id)))
+
+summary(r2.1_mlm2)
+```
+
+
+## Temporal correlation of affect
+```{r}
+df_continuous_affect <- read.csv(file.path(homepath,
+                             "/for_analysis/bffs_crossrunconn_continuousaffect_11132025.csv",
+                             fsep = "")) |>
+  group_by(dyad) |>
+  mutate(posCor = cor(expressedPositiveOdd, expressedPositiveEven),
+         negCor = cor(expressedNegativeOdd, expressedNegativeEven)) |>
+  select(dyad, posCor, negCor) |>
+  unique() |>
+  na.omit() |>
+  pivot_longer(2:3, names_to = "affect", values_to = "cor")
+
+affect_dist <- ggplot(df_continuous_affect, aes(cor)) +
+  geom_histogram() +
+  facet_wrap(~affect)
+
+affect_dist
+
+ggsave(file.path(homepath, "/output/affect_dist.png"), affect_dist, dpi = 300, 
+       width = 9, height = 5)
+```
+
+
+## Change in social interaction quality impression?
+```{r}
+with(df_qst_sample, cor.test(siOverallVisit1, siOverallVisit2))
+```
+
+
+## Self vs other view ratings
+```{r}
+library(fs)
+self_dir <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/self"
+self_files <- dir_ls(self_dir, regexp = "\\.csv$")
+
+self_df_tri <- self_files |>
+  map_dfr(read_csv, col_types = list(pos_resp.keys = col_double(),
+                                     neg_resp.keys = col_double(),
+                                     participant = col_double(),
+                                     dyad = col_double())) |>
+  mutate(id = substr(clips, 29, 38),
+         clips = substr(clips, 40, 43)) |>
+  select(id, clips, pos_resp.keys, neg_resp.keys) |>
+  rename(feltPositiveSelf = pos_resp.keys,
+         feltNegativeSelf = neg_resp.keys) |>
+  filter(id == "2337_02_03" | id == "2337_02_04" | id == "2337_03_05" |
+         id == "2337_03_06" | id == "2337_04_07" | id == "2337_05_10" |
+         id == "2337_07_13" | id == "2337_07_14" | id == "2337_08_15" |
+         id == "2337_08_16" | id == "2337_09_17" | id == "2337_10_19" | 
+         id == "2337_11_21" | id == "2337_11_22" | id == "2337_12_23" |
+         id == "2337_12_24" | id == "2337_13_25" | id == "2337_13_26" |
+         id == "2337_14_27" | id == "2337_14_28" | id == "2337_15_29" |
+         id == "2337_15_30" | id == "2337_16_31" | id == "2337_16_32" |
+         id == "2337_19_37" | id == "2337_20_39" | id == "2337_22_43" |
+         id == "2337_22_44" | id == "2337_23_45" | id == "2337_23_46" |
+         id == "2337_24_48" | id == "2337_27_54" | id == "2337_30_59" |
+         id == "2337_30_60" | id == "2337_32_63" | id == "2337_32_64" |
+         id == "2337_33_65" | id == "2337_34_67" | id == "2337_34_68" |
+         id == "2337_35_69" | id == "2337_35_70" | id == "2337_37_73" |
+         id == "2337_37_74") |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id)) |>
+  select(-study) 
+
+friend_dir <- "/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/F31/BFFs/data_collection/fmri_task_data/friend"
+friend_files <- dir_ls(friend_dir, regexp = "\\.csv$")
+
+friend_df_tri <- friend_files |> 
+  map_dfr(read_csv,  .id = "id", col_types = list(pos_resp.keys = col_double(),
+                                                  neg_resp.keys = col_double(),
+                                                  participant = col_double(),
+                                                  dyad = col_double(),
+                                                  frameRate = col_double())) |>
+  mutate(id = substr(id, 150, 159),
+         clips = substr(clips, 40, 43)) |>
+  select(id, clips, pos_resp.keys, neg_resp.keys) |>
+  rename(feltPositiveFriend = pos_resp.keys,
+         feltNegativeFriend = neg_resp.keys) |>
+  filter(id == "2337_02_03" | id == "2337_02_04" | id == "2337_03_05" |
+         id == "2337_03_06" | id == "2337_04_07" | id == "2337_05_10" |
+         id == "2337_07_13" | id == "2337_07_14" | id == "2337_08_15" |
+         id == "2337_08_16" | id == "2337_09_17" | id == "2337_10_19" | 
+         id == "2337_11_21" | id == "2337_11_22" | id == "2337_12_23" |
+         id == "2337_12_24" | id == "2337_13_25" | id == "2337_13_26" |
+         id == "2337_14_27" | id == "2337_14_28" | id == "2337_15_29" |
+         id == "2337_15_30" | id == "2337_16_31" | id == "2337_16_32" |
+         id == "2337_19_37" | id == "2337_20_39" | id == "2337_22_43" |
+         id == "2337_22_44" | id == "2337_23_45" | id == "2337_23_46" |
+         id == "2337_24_48" | id == "2337_27_54" | id == "2337_30_59" |
+         id == "2337_30_60" | id == "2337_32_63" | id == "2337_32_64" |
+         id == "2337_33_66" | id == "2337_34_67" | id == "2337_34_68" |
+         id == "2337_35_69" | id == "2337_35_70" | id == "2337_37_73" |
+         id == "2337_37_74" | id == "2337_05_09") |>
+  separate(id, c("study", "dyad", "id")) |>
+  mutate(dyad = as.numeric(dyad),
+         id = as.numeric(id)) |>
+  filter(!is.na(clips)) |>
+  select(-study) 
+
+df_sa <- df_qst |>
+  select(id, saTotal)
+
+df_clip_feelings <- full_join(self_df_tri, friend_df_tri) |>
+  filter(!id %in% c(9, 65, 66)) |>
+  group_by(id) |>
+  mutate(feltPositiveSelfAvg = mean(feltPositiveSelf, na.rm = TRUE),
+         feltPositiveFriendAvg = mean(feltPositiveFriend, na.rm = TRUE),
+         feltNegativeSelfAvg = mean(feltNegativeSelf, na.rm = TRUE),
+         feltNegativeFriendAvg = mean(feltNegativeFriend, na.rm = TRUE)) |>
+  select(id, feltPositiveSelfAvg, feltPositiveFriendAvg, feltNegativeSelfAvg,
+         feltNegativeFriendAvg) |>
+  unique() |>
+  pivot_longer(cols = c(feltPositiveSelfAvg, feltPositiveFriendAvg,
+                        feltNegativeSelfAvg, feltNegativeFriendAvg),
+               names_to = c(".value", "target"),
+               names_pattern = "felt(Positive|Negative)(Self|Friend)Avg") |>
+  mutate(target = recode(target, "Self" = 0, "Friend" = 1),
+         target = as.factor(target)) |>
+  left_join(df_sa)
+
+mlm_r2_3a_pos <- with(df_clip_feelings, lmer(Positive~target + saTotal + (1|id)))
+summary(mlm_r2_3a_pos)
+
+mlm_r2_3a_neg <- with(df_clip_feelings, lmer(Negative~target + saTotal + (1|id)))
+summary(mlm_r2_3a_neg)
+```
+
+
+## Distribution of friendship quality
+```{r}
+dyads <- c(2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 22, 23, 24, 
+           27, 30, 32, 34, 35, 37)
+
+df_qst |>
+  select(dyad, id, raRespondentAffection) |>
+  filter(dyad %in% dyads) |>
+  ggplot(aes(raRespondentAffection)) +
+  geom_histogram() +
+  labs(x = "Friendship Quality")
+```
+
+
+## Within-dyad social anxiety correlation
+```{r}
+df_dyadic_sa <- df_qst |>
+  select(dyad, id, saTotal) |>
+  filter(dyad %in% dyads) |>
+  mutate(id = ifelse(id %% 2 == 1, "one", "two")) |>
+  pivot_wider(names_from = id, values_from = saTotal)
+
+with(df_dyadic_sa, cor.test(one, two))
 ```
 
