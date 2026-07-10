@@ -13,7 +13,7 @@ if (!("pacman" %in% installed.packages()[,])) {
     install.packages("pacman")
   }
 pacman::p_load(tidyverse, psych, Hmisc, mice, miceadds, lmerTest, broom.mixed, 
-               partR2, sjPlot, viridis, patchwork)
+               partR2, sjPlot, viridis, patchwork, parameters)
 
 source("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStateUniversity/Research Projects/Standard Codes/check_singularity.R")
 
@@ -245,6 +245,7 @@ mlm1s <- with(synchrony_df, lmer(deconMeanCor ~
                                  (stateRatings|dyad)))
 
 summary(mlm1s)
+tab_model(mlm1s, digits = 3, show.se = TRUE, show.stat = TRUE, show.ci = FALSE)
 
 # imputed
 mlm1i <- with(imputed_df, lmer(deconMeanCor ~
@@ -398,7 +399,7 @@ combined_df |>
 int1 <- plot_model(mlm1s, type = "pred", 
            terms = c("stateRatings", "neuralSimConditionCodes")) +
   ggtitle("") + 
-  labs(y = "Neural Similarity",
+  labs(y = "Inter-Brain Neural Similarity",
        x = "Affective Similarity",
        color = "Condition") +
   scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
@@ -416,7 +417,7 @@ ggsave("/Users/aliciavallorani/Library/CloudStorage/OneDrive-ThePennsylvaniaStat
 int2 <- plot_model(mlm1s, type = "pred", 
            terms = c("stateRatings", "neuralSimConditionCodes", "saTotalC")) +
   ggtitle("") + 
-  labs(y = "Neural Similarity",
+  labs(y = "Inter-Brain Neural Similarity",
        x = "Affective Similarity",
        color = "Condition") +
   scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
@@ -717,7 +718,7 @@ reduce(model_results, full_join, by = "Term") %>%
 dmpfc_plot <- plot_model(dmpfc_model, type = "pred", 
            terms = c("stateRatings", "neuralSimConditionCodes")) +
   ggtitle("") + 
-  labs(y = "Neural Similarity",
+  labs(y = "Inter-Brain Neural Similarity",
        x = "Affective Similarity",
        color = "Condition") +
   scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
@@ -732,7 +733,7 @@ dmpfc_plot <- plot_model(dmpfc_model, type = "pred",
 rtpj_plot <- plot_model(rtpj_model, type = "pred", 
            terms = c("saTotalC", "neuralSimConditionCodes")) +
   ggtitle("") + 
-  labs(y = "Neural Similarity",
+  labs(y = "Inter-Brain Neural Similarity",
        x = "Social Anxiety Symptoms",
        color = "Condition") +
   scale_color_manual(labels = c("Same-Stimuli", "Self-Perspective", "Friend-Perspective"), 
@@ -839,3 +840,144 @@ reduce(model_results, full_join, by = "Term") %>%
   select(Term, Mean_Estimate, Mean_SE, Mean_t_value, Mean_p_value)
 ```
 
+
+## Reviewers requested standardized betas
+```{r}
+# Primary model
+mlm1i_standardizedbetas_list <- lapply(1:25, function(i) {
+  
+  model <- lmer(
+    deconMeanCor ~
+      traitRatings + atlasNameCodes +
+      stateRatings * neuralSimConditionCodes * saTotalC +
+      (stateRatings | dyad),
+    data = imputed_datasets[[i]]
+  )
+  
+  data.frame(
+    model = i,
+    as.data.frame(
+      standardize_parameters(
+        model,
+        method = "refit"
+      )
+    )
+  )
+})
+
+combined_df <- bind_rows(mlm1i_standardizedbetas_list)
+
+combined_df |>
+  group_by(Parameter) |>
+  summarise(
+    beta_mean = mean(Std_Coefficient),
+    beta_sd = sd(Std_Coefficient),
+    .groups = "drop"
+  )
+
+# Models looking at region specific effects
+## dmpfc
+dmpfc_standardizedbetas_list <- lapply(1:25, function(i) {
+  
+  model <- lmer(deconMeanCor ~ traitRatings + 
+                stateRatings*neuralSimConditionCodes*saTotalC + 
+                (stateRatings | dyad), data = dmPFC_data[[i]])
+  
+  data.frame(model = i, as.data.frame(standardize_parameters(model, method = "refit")))
+})
+
+combined_df <- bind_rows(dmpfc_standardizedbetas_list)
+
+combined_df |>
+  group_by(Parameter) |>
+  summarise(beta_mean = mean(Std_Coefficient),
+            beta_sd = sd(Std_Coefficient),
+            .groups = "drop")
+
+### random effects 
+dmpfc_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~ traitRatings + 
+                stateRatings*neuralSimConditionCodes*saTotalC + 
+                (stateRatings | dyad), data = dmPFC_data[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(dmpfc_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+
+
+## rtpj
+rtpj_standardizedbetas_list <- lapply(1:25, function(i) {
+  
+  model <- lmer(deconMeanCor ~ traitRatings + 
+                stateRatings*neuralSimConditionCodes*saTotalC + 
+                (stateRatings | dyad), data = rTPJ_data[[i]])
+  
+  data.frame(model = i, as.data.frame(standardize_parameters(model, method = "refit")))
+})
+
+combined_df <- bind_rows(rtpj_standardizedbetas_list)
+
+combined_df |>
+  group_by(Parameter) |>
+  summarise(beta_mean = mean(Std_Coefficient),
+            beta_sd = sd(Std_Coefficient),
+            .groups = "drop")
+
+### random effects 
+rtpj_random_effects_list <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~ traitRatings + 
+                stateRatings*neuralSimConditionCodes*saTotalC + 
+                (stateRatings | dyad), data = rTPJ_data[[i]])
+  
+  # Extract the random effects information and return as a data frame
+  data.frame(model = i, as.data.frame(summary(model)$varcor))
+})
+
+combined_df <- bind_rows(rtpj_random_effects_list) |>
+  unite(item, c("grp", "var1", "var2")) |>
+  mutate(item = str_replace_all(item, fixed("NA"), ""),
+         item = str_replace_all(item, fixed("("), ""),
+         item = str_replace_all(item, fixed(")"), ""),
+         item = str_replace_all(item, fixed("_"), ""))
+
+combined_df |>
+  group_by(item) |>
+  mutate(vcov_mean = mean(vcov),
+         sdcor_mean = mean(sdcor)) |>
+  select(item, vcov_mean, sdcor_mean) |>
+  unique()
+```
+
+
+
+model_results <- lapply(1:25, function(i) {
+  model <- lmer(deconMeanCor ~
+                  traitRatings +
+                  stateRatings*neuralSimConditionCodes*saTotalC +
+                  (1 | dyad),
+                data = dmPFC_data[[i]])
+  
+  # Extract coefficients and p-values
+  summary_data <- coef(summary(model))
+  data.frame(
+    Term = rownames(summary_data),
+    Estimate = summary_data[, "Estimate"],
+    SE = summary_data[, "Std. Error"],
+    t_value = summary_data[, "t value"],
+    p_value = summary_data[, "Pr(>|t|)"]
+  )
+})
